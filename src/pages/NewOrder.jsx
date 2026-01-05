@@ -311,7 +311,7 @@ const NewOrder = () => {
                                                 key={type}
                                                 type="button"
                                                 onClick={() => setCustomerType(type)}
-                                                className={`px-3 py-2.5 rounded-xl text-sm font-medium border transition-all duration-200 ${customerType === type
+                                                className={`px-3 py-2.5 rounded-xl text-sm font-medium border transition-all duration-200 whitespace-nowrap ${customerType === type
                                                     ? 'bg-primary/10 border-primary text-primary shadow-sm'
                                                     : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
                                                     }`}
@@ -919,41 +919,41 @@ const NewOrder = () => {
                                 <table className="w-full text-left text-sm">
                                     <thead className="bg-slate-50 border-b border-slate-200">
                                         <tr>
-                                            <th className="px-6 py-4 font-semibold text-slate-700">Order ID</th>
-                                            <th className="px-6 py-4 font-semibold text-slate-700">Date</th>
-                                            <th className="px-6 py-4 font-semibold text-slate-700">Contractor</th>
-                                            <th className="px-6 py-4 font-semibold text-slate-700">Contact</th>
-                                            <th className="px-6 py-4 font-semibold text-slate-700 text-right">Items</th>
-                                            <th className="px-6 py-4 font-semibold text-slate-700 text-right">Amount</th>
-                                            <th className="px-6 py-4 font-semibold text-slate-700 text-center">Status</th>
-                                            <th className="px-6 py-4 font-semibold text-slate-700 text-center">Actions</th>
+                                            <th className="px-6 py-4 font-semibold text-slate-700 whitespace-nowrap">Order ID</th>
+                                            <th className="px-6 py-4 font-semibold text-slate-700 whitespace-nowrap">Date</th>
+                                            <th className="px-6 py-4 font-semibold text-slate-700 whitespace-nowrap">Contractor</th>
+                                            <th className="px-6 py-4 font-semibold text-slate-700 whitespace-nowrap">Contact</th>
+                                            <th className="px-6 py-4 font-semibold text-slate-700 text-right whitespace-nowrap">Items</th>
+                                            <th className="px-6 py-4 font-semibold text-slate-700 text-right whitespace-nowrap">Amount</th>
+                                            <th className="px-6 py-4 font-semibold text-slate-700 text-center whitespace-nowrap">Status</th>
+                                            <th className="px-6 py-4 font-semibold text-slate-700 text-center whitespace-nowrap">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
                                         {orderHistory.map((order) => (
                                             <tr key={order.order_id} className="hover:bg-slate-50/50 transition-colors">
-                                                <td className="px-6 py-4 font-medium text-primary cursor-pointer hover:underline">
+                                                <td className="px-6 py-4 font-medium text-primary cursor-pointer hover:underline whitespace-nowrap">
                                                     {order.order_id}
                                                 </td>
-                                                <td className="px-6 py-4 text-slate-600">
+                                                <td className="px-6 py-4 text-slate-600 whitespace-nowrap">
                                                     <div className="flex items-center gap-2">
                                                         <Calendar size={14} className="text-slate-400" />
                                                         {new Date(order.order_date).toLocaleDateString()}
                                                     </div>
                                                 </td>
-                                                <td className="px-6 py-4 text-slate-800 font-medium">
+                                                <td className="px-6 py-4 text-slate-800 font-medium whitespace-nowrap">
                                                     {order.contractor_name}
                                                 </td>
-                                                <td className="px-6 py-4 text-slate-600 font-mono text-xs">
+                                                <td className="px-6 py-4 text-slate-600 font-mono text-xs whitespace-nowrap">
                                                     {order.site_contact_number || 'N/A'}
                                                 </td>
-                                                <td className="px-6 py-4 text-slate-600 text-right">
+                                                <td className="px-6 py-4 text-slate-600 text-right whitespace-nowrap">
                                                     {Array.isArray(order.items) ? order.items.reduce((acc, item) => acc + (item.quantity || 0), 0) : 0}
                                                 </td>
-                                                <td className="px-6 py-4 text-slate-800 font-semibold text-right">
+                                                <td className="px-6 py-4 text-slate-800 font-semibold text-right whitespace-nowrap">
                                                     ₹ {order.total_amount?.toLocaleString() || '0'}
                                                 </td>
-                                                <td className="px-6 py-4 text-center">
+                                                <td className="px-6 py-4 text-center whitespace-nowrap">
                                                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${order.order_status === 'Completed'
                                                         ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
                                                         : order.order_status === 'Processing'
@@ -963,7 +963,7 @@ const NewOrder = () => {
                                                         {order.order_status}
                                                     </span>
                                                 </td>
-                                                <td className="px-6 py-4 text-center">
+                                                <td className="px-6 py-4 text-center whitespace-nowrap">
                                                     <div className="flex items-center justify-center gap-2">
                                                         <button
                                                             onClick={() => setSelectedOrder(order)}
@@ -1031,15 +1031,15 @@ const NewOrder = () => {
                                         <div className="text-sm space-y-2 text-slate-600">
                                             <div className="flex justify-between">
                                                 <span className="text-slate-500">Contractor:</span>
-                                                <span className="font-medium text-slate-800">{selectedOrder.contractor_name}</span>
+                                                <span className="font-medium text-slate-800 whitespace-nowrap">{selectedOrder.contractor_name}</span>
                                             </div>
                                             <div className="flex justify-between">
                                                 <span className="text-slate-500">Type:</span>
-                                                <span className="font-medium text-slate-800">{selectedOrder.customer_type || '-'}</span>
+                                                <span className="font-medium text-slate-800 whitespace-nowrap">{selectedOrder.customer_type || '-'}</span>
                                             </div>
                                             <div className="flex justify-between">
                                                 <span className="text-slate-500">Contact:</span>
-                                                <span className="font-medium text-slate-800">{selectedOrder.site_contact_number || '-'}</span>
+                                                <span className="font-medium text-slate-800 whitespace-nowrap">{selectedOrder.site_contact_number || '-'}</span>
                                             </div>
                                         </div>
                                     </div>
@@ -1050,11 +1050,11 @@ const NewOrder = () => {
                                         <div className="text-sm space-y-2 text-slate-600">
                                             <div className="flex justify-between">
                                                 <span className="text-slate-500">State:</span>
-                                                <span className="font-medium text-slate-800">{selectedOrder.state || '-'}</span>
+                                                <span className="font-medium text-slate-800 whitespace-nowrap">{selectedOrder.state || '-'}</span>
                                             </div>
                                             <div className="flex justify-between">
                                                 <span className="text-slate-500">City:</span>
-                                                <span className="font-medium text-slate-800">{selectedOrder.city || '-'}</span>
+                                                <span className="font-medium text-slate-800 whitespace-nowrap">{selectedOrder.city || '-'}</span>
                                             </div>
                                             <div className="block mt-2">
                                                 <span className="text-slate-500 block text-xs mb-1">Address:</span>
@@ -1069,36 +1069,36 @@ const NewOrder = () => {
                                     <h4 className="font-semibold text-slate-700 mb-3 flex items-center gap-2">
                                         <ShoppingBag size={18} /> Order Items
                                     </h4>
-                                    <div className="border border-slate-200 rounded-lg overflow-hidden">
+                                    <div className="border border-slate-200 rounded-lg overflow-hidden overflow-x-auto">
                                         <table className="w-full text-sm text-left">
                                             <thead className="bg-slate-50 border-b border-slate-200">
                                                 <tr>
-                                                    <th className="px-4 py-3 font-medium text-slate-600">Product</th>
-                                                    <th className="px-4 py-3 font-medium text-slate-600 text-right">Qty</th>
-                                                    <th className="px-4 py-3 font-medium text-slate-600 text-right">Price</th>
-                                                    <th className="px-4 py-3 font-medium text-slate-600 text-right">Points</th>
-                                                    <th className="px-4 py-3 font-medium text-slate-600 text-right">Total</th>
+                                                    <th className="px-4 py-3 font-medium text-slate-600 whitespace-nowrap">Product</th>
+                                                    <th className="px-4 py-3 font-medium text-slate-600 text-right whitespace-nowrap">Qty</th>
+                                                    <th className="px-4 py-3 font-medium text-slate-600 text-right whitespace-nowrap">Price</th>
+                                                    <th className="px-4 py-3 font-medium text-slate-600 text-right whitespace-nowrap">Points</th>
+                                                    <th className="px-4 py-3 font-medium text-slate-600 text-right whitespace-nowrap">Total</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-slate-100">
                                                 {selectedOrder.items && selectedOrder.items.map((item, idx) => (
                                                     <tr key={idx} className="hover:bg-slate-50/50">
-                                                        <td className="px-4 py-3 text-slate-800 font-medium">{item.product_name}</td>
-                                                        <td className="px-4 py-3 text-slate-600 text-right">{item.quantity}</td>
-                                                        <td className="px-4 py-3 text-slate-600 text-right">₹{item.unit_price}</td>
-                                                        <td className="px-4 py-3 text-blue-600 text-right">{item.reward_points}</td>
-                                                        <td className="px-4 py-3 text-slate-800 text-right font-semibold">
+                                                        <td className="px-4 py-3 text-slate-800 font-medium whitespace-nowrap">{item.product_name}</td>
+                                                        <td className="px-4 py-3 text-slate-600 text-right whitespace-nowrap">{item.quantity}</td>
+                                                        <td className="px-4 py-3 text-slate-600 text-right whitespace-nowrap">₹{item.unit_price}</td>
+                                                        <td className="px-4 py-3 text-blue-600 text-right whitespace-nowrap">{item.reward_points}</td>
+                                                        <td className="px-4 py-3 text-slate-800 text-right font-semibold whitespace-nowrap">
                                                             ₹{(item.quantity * item.unit_price).toLocaleString()}
                                                         </td>
                                                     </tr>
                                                 ))}
                                                 <tr className="bg-slate-50 font-bold">
-                                                    <td className="px-4 py-3 text-slate-800">Total</td>
-                                                    <td className="px-4 py-3 text-slate-800 text-right">
+                                                    <td className="px-4 py-3 text-slate-800 whitespace-nowrap">Total</td>
+                                                    <td className="px-4 py-3 text-slate-800 text-right whitespace-nowrap">
                                                         {selectedOrder.items?.reduce((s, i) => s + (i.quantity || 0), 0)}
                                                     </td>
                                                     <td colSpan="2"></td>
-                                                    <td className="px-4 py-3 text-slate-800 text-right text-base">
+                                                    <td className="px-4 py-3 text-slate-800 text-right text-base whitespace-nowrap">
                                                         ₹{selectedOrder.total_amount?.toLocaleString()}
                                                     </td>
                                                 </tr>
