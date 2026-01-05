@@ -1,43 +1,93 @@
 import { supabase } from '../supabase';
 
 export const CUSTOMER_TYPES = [
+    'Contractor',
+    'Interiors/Architect',
+    'Site Supervisor',
     'Retailer',
-    'Distributor'
+    'Distributor',
+    'Mistry'
 ];
 
 export const orderService = {
     // Create a new order
     createOrder: async (orderData) => {
         try {
-            // Get current user
-            const { data: { user } } = await supabase.auth.getUser();
-            if (!user) throw new Error('User not authenticated');
+            // Get current user from localStorage (Custom Auth)
+            const storedUser = localStorage.getItem('user');
+            if (!storedUser) throw new Error('User not authenticated');
 
-            // Get user details from public.users table to get the name
-            const { data: userData, error: userError } = await supabase
-                .from('users')
-                .select('full_name, username')
-                .eq('user_id', user.id)
-                .single();
+            const user = JSON.parse(storedUser);
 
-            if (userError) throw userError;
+            // Validate user has necessary fields
+            if (!user.user_id) throw new Error('User ID not found in session');
+
+            // Separate items from order details
+            const { items, ...orderDetails } = orderData;
 
             // Prepare order payload
             const payload = {
-                ...orderData,
-                created_by_user_id: user.id,
-                created_by_user_name: userData.full_name || userData.username || 'Unknown User',
+                ...orderDetails,
+                created_by_user_id: user.user_id,
+                created_by_user_name: user.full_name || user.Name || user.username || 'Unknown User',
                 status: 'Pending' // Default status
             };
 
-            const { data, error } = await supabase
+            // 1. Insert Order
+            const orderInsertPayload = {
+                order_id: payload.order_id,
+                order_date: payload.order_date,
+                contractor_name: payload.contractor_name,
+                customer_type: payload.customer_type,
+                challan_reference: payload.challan_reference, // Renamed from challan_name
+                site_contact_number: payload.site_contact_number, // Renamed from site_poc_contact
+                state: payload.state,
+                city: payload.city,
+                delivery_address: payload.delivery_address,
+                total_amount: payload.total_amount,
+                point_of_contact_role: payload.point_of_contact_role, // Renamed from point_role
+                logistics_mode: payload.logistics_mode, // Renamed from logistics_option
+                payment_terms: payload.payment_terms,
+                manual_payment_days: payload.manual_payment_days,
+                remarks: payload.remarks, // Renamed from notes
+                order_status: 'Pending', // Renamed from status
+                nickname: payload.nickname,
+                mistry_name: payload.mistry_name,
+                created_by_user_id: user.user_id,
+                created_by_user_name: user.full_name || user.Name || user.username || 'Unknown User'
+            };
+
+            const { data: order, error: orderError } = await supabase
                 .from('orders')
-                .insert([payload])
+                .insert([orderInsertPayload])
                 .select()
                 .single();
 
-            if (error) throw error;
-            return { data, error: null };
+            if (orderError) throw orderError;
+
+            // 2. Insert Items (if any)
+            if (items && items.length > 0) {
+                const productsPayload = items.map(item => ({
+                    order_id: order.order_id, // Renamed from id
+                    product_name: item.product,
+                    quantity: item.quantity,
+                    unit_price: item.price, // Renamed from price
+                    reward_points: item.points // Renamed from points
+                }));
+
+                const { error: productsError } = await supabase
+                    .from('products')
+                    .insert(productsPayload);
+
+                if (productsError) {
+                    // Delete the created order if product insertion fails to maintain consistency
+                    console.error('Error creating products, rolling back order:', productsError);
+                    await supabase.from('orders').delete().eq('order_id', order.order_id); // Renamed from id
+                    throw productsError;
+                }
+            }
+
+            return { data: order, error: null };
         } catch (error) {
             console.error('Error creating order:', error);
             return { data: null, error };
@@ -49,7 +99,7 @@ export const orderService = {
         try {
             const { data, error } = await supabase
                 .from('orders')
-                .select('*')
+                .select('*, items:products(*)')
                 .order('created_at', { ascending: false });
 
             if (error) throw error;
@@ -66,7 +116,7 @@ export const orderService = {
             const { data, error } = await supabase
                 .from('orders')
                 .update(updates)
-                .eq('id', id)
+                .eq('order_id', id)
                 .select()
                 .single();
 
@@ -84,7 +134,7 @@ export const orderService = {
             const { error } = await supabase
                 .from('orders')
                 .delete()
-                .eq('id', id);
+                .eq('order_id', id);
 
             if (error) throw error;
             return { error: null };

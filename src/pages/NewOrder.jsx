@@ -31,7 +31,8 @@ const NewOrder = () => {
 
     // Form State
     const [orderDate, setOrderDate] = useState(new Date().toISOString().split('T')[0]);
-    const [customerName, setCustomerName] = useState('');
+    const [contractorName, setContractorName] = useState('');
+    const [customerPhone, setCustomerPhone] = useState('');
     const [customerType, setCustomerType] = useState('');
     const [items, setItems] = useState([{ id: 1, product: '', quantity: 1, price: 0, points: 0 }]);
     const [notes, setNotes] = useState('');
@@ -42,6 +43,7 @@ const NewOrder = () => {
     // History State
     // History State
     const [orderHistory, setOrderHistory] = useState([]);
+    const [selectedOrder, setSelectedOrder] = useState(null);
 
     // Fetch orders on mount or when tab changes
     React.useEffect(() => {
@@ -88,6 +90,49 @@ const NewOrder = () => {
     const [selectedCity, setSelectedCity] = useState('');
     const [citySearch, setCitySearch] = useState('');
     const [showCityDropdown, setShowCityDropdown] = useState(false);
+
+    // ID Generation State
+    const [nickname, setNickname] = useState('');
+    const [cityCode, setCityCode] = useState('');
+    const [mistryName, setMistryName] = useState('');
+
+    React.useEffect(() => {
+        if (selectedCity) {
+            let code = selectedCity.substring(0, 3).toUpperCase();
+            if (selectedCity.toLowerCase() === 'raipur') code = 'RPR';
+            if (selectedCity.toLowerCase() === 'nagpur') code = 'NAG';
+            setCityCode(code);
+        } else {
+            setCityCode('');
+        }
+    }, [selectedCity]);
+
+    const getGeneratedId = () => {
+        if (!customerPhone || customerPhone.replace(/\D/g, '').length < 5) return '';
+        if (!cityCode || !contractorName) return '';
+
+        const phoneLast5 = customerPhone.replace(/\D/g, '').slice(-5);
+
+        let typePrefix = 'C';
+        if (customerType === 'Interiors/Architect') typePrefix = 'IA';
+        else if (customerType === 'Site Supervisor') typePrefix = 'SS';
+        else if (customerType === 'Mistry') typePrefix = 'Mi';
+
+        const nameDisplay = (customerType === 'Contractor' && nickname) ? `${contractorName}(${nickname})` : contractorName;
+
+        if (customerType === 'Mistry') {
+            // Mi/ Contractor ID –Mistry name
+            return `Mi/${phoneLast5}/${cityCode}/${nameDisplay}-${mistryName || ''}`;
+        }
+
+        return `${typePrefix}/${phoneLast5}/${cityCode}/${nameDisplay}`;
+    };
+
+    // Reset fields when customer type changes
+    React.useEffect(() => {
+        setNickname('');
+        setMistryName('');
+    }, [customerType]);
 
     const states = Object.keys(INDIAN_LOCATIONS);
     const filteredStates = states.filter(state =>
@@ -138,25 +183,35 @@ const NewOrder = () => {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+
+        if (!customerType) {
+            toast.error('Please select a customer type');
+            return;
+        }
+
         setLoading(true);
 
         try {
             const orderPayload = {
                 order_date: orderDate,
-                customer_name: customerName,
+                contractor_name: contractorName,
                 customer_type: customerType,
+                customer_phone: customerPhone,
                 items: items,
                 total_amount: calculateTotal(),
-                notes: notes,
-                challan_name: challanName,
-                site_poc_contact: sitePoc,
+                remarks: notes, // Renamed from notes
+                challan_reference: challanName, // Renamed from challan_name
+                site_contact_number: sitePoc, // Renamed from site_poc_contact
                 delivery_address: deliveryAddress,
-                point_role: pointRole,
+                point_of_contact_role: pointRole, // Renamed from point_role
                 payment_terms: paymentTerms,
                 manual_payment_days: manualPaymentDays ? parseInt(manualPaymentDays) : null,
-                logistics_option: logistics,
+                logistics_mode: logistics, // Renamed from logistics_option
                 state: selectedState,
-                city: selectedCity
+                city: selectedCity,
+                order_id: getGeneratedId(),
+                nickname: nickname,
+                mistry_name: mistryName
             };
 
             const { data, error } = await orderService.createOrder(orderPayload);
@@ -168,7 +223,8 @@ const NewOrder = () => {
             fetchOrders(); // Refresh list
 
             // Reset form
-            setCustomerName('');
+            setContractorName('');
+            setCustomerPhone('');
             setCustomerType('');
             setItems([{ id: 1, product: '', quantity: 1, price: 0, points: 0 }]);
             setNotes('');
@@ -183,7 +239,11 @@ const NewOrder = () => {
             setStateSearch('');
             setSelectedCity('');
             setCitySearch('');
+            setCitySearch('');
             setOrderDate(new Date().toISOString().split('T')[0]);
+            setNickname('');
+            setCityCode('');
+            setMistryName('');
         } catch (error) {
             console.error(error);
             toast.error('Failed to create order');
@@ -201,7 +261,7 @@ const NewOrder = () => {
                         <ShoppingCart className="text-primary" size={28} />
                         Order Management
                     </h1>
-                    <p className="text-slate-500 mt-1 text-sm">Create and manage customer orders.</p>
+                    <p className="text-slate-500 mt-1 text-sm">Create and manage contractor orders.</p>
                 </div>
             </div>
 
@@ -245,15 +305,15 @@ const NewOrder = () => {
                                 {/* Customer Type */}
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 mb-1.5">Customer Type</label>
-                                    <div className="flex bg-slate-100/80 p-1 rounded-lg">
+                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                                         {CUSTOMER_TYPES.map(type => (
                                             <button
                                                 key={type}
                                                 type="button"
                                                 onClick={() => setCustomerType(type)}
-                                                className={`flex-1 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 ${customerType === type
-                                                    ? 'bg-white text-primary shadow-sm ring-1 ring-black/5'
-                                                    : 'text-slate-500 hover:text-slate-700 hover:bg-white/50'
+                                                className={`px-3 py-2.5 rounded-xl text-sm font-medium border transition-all duration-200 ${customerType === type
+                                                    ? 'bg-primary/10 border-primary text-primary shadow-sm'
+                                                    : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
                                                     }`}
                                             >
                                                 {type}
@@ -261,6 +321,16 @@ const NewOrder = () => {
                                         ))}
                                     </div>
                                     {!customerType && <p className="text-xs text-amber-600 mt-1.5 ml-1">Please select a customer type</p>}
+
+                                    {/* Generated ID Display */}
+                                    {customerType && (
+                                        <div className="mt-3 p-3 bg-slate-50 border border-slate-200 rounded-lg">
+                                            <p className="text-xs font-semibold text-slate-500 mb-1">Generated ID</p>
+                                            <p className="text-sm font-mono font-medium text-primary break-all">
+                                                {getGeneratedId() || <span className="text-slate-400 italic">Complete details to generate ID...</span>}
+                                            </p>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Order Date */}
@@ -282,21 +352,80 @@ const NewOrder = () => {
 
                                 {/* Customer Name */}
                                 <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1.5">Customer Name</label>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1.5">Contractor Name</label>
                                     <div className="relative">
                                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                             <User size={18} className="text-slate-400" />
                                         </div>
                                         <input
                                             type="text"
-                                            value={customerName}
-                                            onChange={(e) => setCustomerName(e.target.value)}
+                                            value={contractorName}
+                                            onChange={(e) => setContractorName(e.target.value)}
                                             required
                                             className="block w-full pl-10 pr-3 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors outline-none text-sm"
-                                            placeholder="Enter customer name"
+                                            placeholder="Enter contractor name"
                                         />
                                     </div>
                                 </div>
+
+                                {/* Customer Phone */}
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1.5">Customer Phone Number</label>
+                                    <div className="relative">
+                                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                            <Phone size={18} className="text-slate-400" />
+                                        </div>
+                                        <input
+                                            type="tel"
+                                            value={customerPhone}
+                                            onChange={(e) => setCustomerPhone(e.target.value)}
+                                            required
+                                            className="block w-full pl-10 pr-3 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors outline-none text-sm"
+                                            placeholder="Enter phone number"
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Nickname (Only for Contractor) */}
+                                {customerType === 'Contractor' && (
+                                    <div className="animate-in fade-in slide-in-from-top-2">
+                                        <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                                            Nickname <span className="text-slate-400 font-normal">(Market Name)</span>
+                                        </label>
+                                        <div className="relative">
+                                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                                <User size={18} className="text-slate-400" />
+                                            </div>
+                                            <input
+                                                type="text"
+                                                value={nickname}
+                                                onChange={(e) => setNickname(e.target.value)}
+                                                className="block w-full pl-10 pr-3 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors outline-none text-sm"
+                                                placeholder="Optional (e.g. Nillu)"
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Mistry Name (Only for Mistry) */}
+                                {customerType === 'Mistry' && (
+                                    <div className="animate-in fade-in slide-in-from-top-2">
+                                        <label className="block text-sm font-medium text-slate-700 mb-1.5">Mistry Name</label>
+                                        <div className="relative">
+                                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                                <User size={18} className="text-slate-400" />
+                                            </div>
+                                            <input
+                                                type="text"
+                                                value={mistryName}
+                                                onChange={(e) => setMistryName(e.target.value)}
+                                                required={customerType === 'Mistry'}
+                                                className="block w-full pl-10 pr-3 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors outline-none text-sm"
+                                                placeholder="Enter Mistry Name"
+                                            />
+                                        </div>
+                                    </div>
+                                )}
 
                                 {/* Challan Name */}
                                 <div>
@@ -475,6 +604,24 @@ const NewOrder = () => {
                                                 </div>
                                             </>
                                         )}
+                                    </div>
+                                </div>
+
+                                {/* City Code */}
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1.5">City Code</label>
+                                    <div className="relative">
+                                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                            <MapPin size={18} className="text-slate-400" />
+                                        </div>
+                                        <input
+                                            type="text"
+                                            value={cityCode}
+                                            onChange={(e) => setCityCode(e.target.value.toUpperCase())}
+                                            maxLength={3}
+                                            className="block w-full pl-10 pr-3 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors outline-none text-sm font-mono uppercase"
+                                            placeholder="XXX"
+                                        />
                                     </div>
                                 </div>
 
@@ -774,7 +921,7 @@ const NewOrder = () => {
                                         <tr>
                                             <th className="px-6 py-4 font-semibold text-slate-700">Order ID</th>
                                             <th className="px-6 py-4 font-semibold text-slate-700">Date</th>
-                                            <th className="px-6 py-4 font-semibold text-slate-700">Customer</th>
+                                            <th className="px-6 py-4 font-semibold text-slate-700">Contractor</th>
                                             <th className="px-6 py-4 font-semibold text-slate-700">Contact</th>
                                             <th className="px-6 py-4 font-semibold text-slate-700 text-right">Items</th>
                                             <th className="px-6 py-4 font-semibold text-slate-700 text-right">Amount</th>
@@ -784,9 +931,9 @@ const NewOrder = () => {
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
                                         {orderHistory.map((order) => (
-                                            <tr key={order.id} className="hover:bg-slate-50/50 transition-colors">
+                                            <tr key={order.order_id} className="hover:bg-slate-50/50 transition-colors">
                                                 <td className="px-6 py-4 font-medium text-primary cursor-pointer hover:underline">
-                                                    ORD-{order.id}
+                                                    {order.order_id}
                                                 </td>
                                                 <td className="px-6 py-4 text-slate-600">
                                                     <div className="flex items-center gap-2">
@@ -795,10 +942,10 @@ const NewOrder = () => {
                                                     </div>
                                                 </td>
                                                 <td className="px-6 py-4 text-slate-800 font-medium">
-                                                    {order.customer_name}
+                                                    {order.contractor_name}
                                                 </td>
                                                 <td className="px-6 py-4 text-slate-600 font-mono text-xs">
-                                                    {order.site_poc_contact || 'N/A'}
+                                                    {order.site_contact_number || 'N/A'}
                                                 </td>
                                                 <td className="px-6 py-4 text-slate-600 text-right">
                                                     {Array.isArray(order.items) ? order.items.reduce((acc, item) => acc + (item.quantity || 0), 0) : 0}
@@ -807,22 +954,25 @@ const NewOrder = () => {
                                                     ₹ {order.total_amount?.toLocaleString() || '0'}
                                                 </td>
                                                 <td className="px-6 py-4 text-center">
-                                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${order.status === 'Completed'
+                                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${order.order_status === 'Completed'
                                                         ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
-                                                        : order.status === 'Processing'
+                                                        : order.order_status === 'Processing'
                                                             ? 'bg-blue-50 text-blue-700 border-blue-100'
                                                             : 'bg-amber-50 text-amber-700 border-amber-100'
                                                         }`}>
-                                                        {order.status}
+                                                        {order.order_status}
                                                     </span>
                                                 </td>
                                                 <td className="px-6 py-4 text-center">
                                                     <div className="flex items-center justify-center gap-2">
-                                                        <button className="text-slate-400 hover:text-primary transition-colors p-1">
+                                                        <button
+                                                            onClick={() => setSelectedOrder(order)}
+                                                            className="text-slate-400 hover:text-primary transition-colors p-1"
+                                                        >
                                                             <Eye size={18} />
                                                         </button>
                                                         <button
-                                                            onClick={() => handleDeleteOrder(order.id)}
+                                                            onClick={() => handleDeleteOrder(order.order_id)}
                                                             className="text-slate-400 hover:text-red-500 transition-colors p-1"
                                                         >
                                                             <Trash2 size={18} />
@@ -845,6 +995,144 @@ const NewOrder = () => {
                                         )}
                                     </tbody>
                                 </table>
+                            </div>
+                        </div>
+                    </div>
+                )}
+                {/* Order Details Modal */}
+                {selectedOrder && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                        <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
+                            <div className="p-6 border-b border-slate-100 flex items-center justify-between shrink-0">
+                                <div>
+                                    <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                                        <Package className="text-primary" size={24} />
+                                        Order #{selectedOrder.order_id}
+                                    </h3>
+                                    <p className="text-sm text-slate-500 mt-1">
+                                        {new Date(selectedOrder.order_date).toLocaleDateString()} • {selectedOrder.contractor_name}
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={() => setSelectedOrder(null)}
+                                    className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                                >
+                                    <X size={24} />
+                                </button>
+                            </div>
+
+                            <div className="p-6 overflow-y-auto custom-scrollbar space-y-6">
+                                {/* Contract Info */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div className="p-4 bg-slate-50 rounded-xl space-y-3">
+                                        <h4 className="font-semibold text-slate-700 flex items-center gap-2">
+                                            <User size={16} /> Customer Details
+                                        </h4>
+                                        <div className="text-sm space-y-2 text-slate-600">
+                                            <div className="flex justify-between">
+                                                <span className="text-slate-500">Contractor:</span>
+                                                <span className="font-medium text-slate-800">{selectedOrder.contractor_name}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-slate-500">Type:</span>
+                                                <span className="font-medium text-slate-800">{selectedOrder.customer_type || '-'}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-slate-500">Contact:</span>
+                                                <span className="font-medium text-slate-800">{selectedOrder.site_contact_number || '-'}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="p-4 bg-slate-50 rounded-xl space-y-3">
+                                        <h4 className="font-semibold text-slate-700 flex items-center gap-2">
+                                            <MapPin size={16} /> Delivery Info
+                                        </h4>
+                                        <div className="text-sm space-y-2 text-slate-600">
+                                            <div className="flex justify-between">
+                                                <span className="text-slate-500">State:</span>
+                                                <span className="font-medium text-slate-800">{selectedOrder.state || '-'}</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-slate-500">City:</span>
+                                                <span className="font-medium text-slate-800">{selectedOrder.city || '-'}</span>
+                                            </div>
+                                            <div className="block mt-2">
+                                                <span className="text-slate-500 block text-xs mb-1">Address:</span>
+                                                <span className="font-medium text-slate-800 block">{selectedOrder.delivery_address || '-'}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Products Table */}
+                                <div>
+                                    <h4 className="font-semibold text-slate-700 mb-3 flex items-center gap-2">
+                                        <ShoppingBag size={18} /> Order Items
+                                    </h4>
+                                    <div className="border border-slate-200 rounded-lg overflow-hidden">
+                                        <table className="w-full text-sm text-left">
+                                            <thead className="bg-slate-50 border-b border-slate-200">
+                                                <tr>
+                                                    <th className="px-4 py-3 font-medium text-slate-600">Product</th>
+                                                    <th className="px-4 py-3 font-medium text-slate-600 text-right">Qty</th>
+                                                    <th className="px-4 py-3 font-medium text-slate-600 text-right">Price</th>
+                                                    <th className="px-4 py-3 font-medium text-slate-600 text-right">Points</th>
+                                                    <th className="px-4 py-3 font-medium text-slate-600 text-right">Total</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {selectedOrder.items && selectedOrder.items.map((item, idx) => (
+                                                    <tr key={idx} className="hover:bg-slate-50/50">
+                                                        <td className="px-4 py-3 text-slate-800 font-medium">{item.product_name}</td>
+                                                        <td className="px-4 py-3 text-slate-600 text-right">{item.quantity}</td>
+                                                        <td className="px-4 py-3 text-slate-600 text-right">₹{item.unit_price}</td>
+                                                        <td className="px-4 py-3 text-blue-600 text-right">{item.reward_points}</td>
+                                                        <td className="px-4 py-3 text-slate-800 text-right font-semibold">
+                                                            ₹{(item.quantity * item.unit_price).toLocaleString()}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                                <tr className="bg-slate-50 font-bold">
+                                                    <td className="px-4 py-3 text-slate-800">Total</td>
+                                                    <td className="px-4 py-3 text-slate-800 text-right">
+                                                        {selectedOrder.items?.reduce((s, i) => s + (i.quantity || 0), 0)}
+                                                    </td>
+                                                    <td colSpan="2"></td>
+                                                    <td className="px-4 py-3 text-slate-800 text-right text-base">
+                                                        ₹{selectedOrder.total_amount?.toLocaleString()}
+                                                    </td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+
+                                {/* Additional Info */}
+                                {(selectedOrder.point_of_contact_role || selectedOrder.remarks) && (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        {selectedOrder.point_of_contact_role && (
+                                            <div className="p-4 border border-slate-100 rounded-xl">
+                                                <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Point Role</h4>
+                                                <p className="text-slate-800 font-medium">{selectedOrder.point_of_contact_role}</p>
+                                            </div>
+                                        )}
+                                        {selectedOrder.remarks && (
+                                            <div className="p-4 border border-slate-100 rounded-xl">
+                                                <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Notes</h4>
+                                                <p className="text-slate-600 text-sm whitespace-pre-wrap">{selectedOrder.remarks}</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end">
+                                <button
+                                    onClick={() => setSelectedOrder(null)}
+                                    className="px-6 py-2 bg-white border border-slate-200 text-slate-700 font-medium rounded-lg hover:bg-slate-50 transition-colors shadow-sm"
+                                >
+                                    Close
+                                </button>
                             </div>
                         </div>
                     </div>
