@@ -183,7 +183,8 @@ const NewOrder = () => {
         return idGenerator.generateSiteId({
             user: currentUser,
             cityCode,
-            siteCount: siteNumber
+            siteCount: siteNumber,
+            date: orderDate
         });
     };
 
@@ -381,8 +382,8 @@ const NewOrder = () => {
                         )}
 
                         {/* Order Details Card */}
-                        <div className="bg-white rounded-2xl shadow-sm border border-slate-200/60 overflow-hidden">
-                            <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div className="bg-white rounded-2xl shadow-sm border border-slate-200/60">
+                            <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 rounded-t-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                                 <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
                                     <div className="bg-white p-1.5 rounded-lg border border-slate-200 shadow-sm text-primary">
                                         <FileText size={18} />

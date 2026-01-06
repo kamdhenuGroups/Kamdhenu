@@ -410,13 +410,13 @@ export const idGenerator = {
         return `${typePrefix}/${phoneLast5}/${cityCode}/${nameDisplay}`;
     },
 
-    generateSiteId: ({ user, cityCode, siteCount }) => {
+    generateSiteId: ({ user, cityCode, siteCount, date }) => {
         if (!user || !cityCode) return '';
 
         // MMYY
-        const date = new Date();
-        const mm = (date.getMonth() + 1).toString().padStart(2, '0');
-        const yy = date.getFullYear().toString().slice(-2);
+        const validDate = date ? new Date(date) : new Date();
+        const mm = (validDate.getMonth() + 1).toString().padStart(2, '0');
+        const yy = validDate.getFullYear().toString().slice(-2);
 
         // RM Name Code
         const rmCode = idGenerator.getRMCode(user);
