@@ -3,6 +3,8 @@
 
 CREATE TABLE public.orders (
   order_id text NOT NULL,
+  contractor_id text NOT NULL,
+  site_id text NOT NULL,
   order_date date NOT NULL,
   challan_reference text,
   contractor_name text NOT NULL,
@@ -25,9 +27,8 @@ CREATE TABLE public.orders (
   created_by_user_name text NOT NULL,
   created_at timestamp without time zone DEFAULT (now() AT TIME ZONE 'Asia/Kolkata'::text),
   CONSTRAINT orders_pkey PRIMARY KEY (order_id),
-  CONSTRAINT orders_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.users(user_id)
+  CONSTRAINT orders_created_by_user_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.users(user_id)
 );
-
 CREATE TABLE public.products (
   product_id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
   order_id text NOT NULL,
@@ -37,9 +38,8 @@ CREATE TABLE public.products (
   reward_points integer DEFAULT 0,
   created_at timestamp without time zone DEFAULT (now() AT TIME ZONE 'Asia/Kolkata'::text),
   CONSTRAINT products_pkey PRIMARY KEY (product_id),
-  CONSTRAINT products_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.orders(order_id)
+  CONSTRAINT products_order_fkey FOREIGN KEY (order_id) REFERENCES public.orders(order_id)
 );
-
 CREATE TABLE public.users (
   user_id text NOT NULL,
   full_name text NOT NULL,

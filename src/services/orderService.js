@@ -38,6 +38,8 @@ export const orderService = {
                 order_id: payload.order_id,
                 order_date: payload.order_date,
                 contractor_name: payload.contractor_name,
+                contractor_id: payload.contractor_id,
+                site_id: payload.site_id,
                 customer_type: payload.customer_type,
                 challan_reference: payload.challan_reference, // Renamed from challan_name
                 site_contact_number: payload.site_contact_number, // Renamed from site_poc_contact
@@ -53,6 +55,7 @@ export const orderService = {
                 order_status: 'Pending', // Renamed from status
                 nickname: payload.nickname,
                 mistry_name: payload.mistry_name,
+                customer_phone: payload.customer_phone,
                 created_by_user_id: user.user_id,
                 created_by_user_name: user.full_name || user.Name || user.username || 'Unknown User'
             };
@@ -141,6 +144,26 @@ export const orderService = {
         } catch (error) {
             console.error('Error deleting order:', error);
             return { error };
+        }
+    },
+
+    // Get next site number for a user
+    getNextSiteNumber: async (userId) => {
+        try {
+            const { data, error } = await supabase
+                .from('orders')
+                .select('site_id')
+                .eq('created_by_user_id', userId)
+                .not('site_id', 'is', null);
+
+            if (error) throw error;
+
+            // Get unique site IDs
+            const uniqueSiteIds = new Set(data.map(order => order.site_id).filter(Boolean));
+            return { count: uniqueSiteIds.size + 1, error: null };
+        } catch (error) {
+            console.error('Error fetching site count:', error);
+            return { count: 1, error };
         }
     }
 };

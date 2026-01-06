@@ -95,6 +95,25 @@ const NewOrder = () => {
     const [nickname, setNickname] = useState('');
     const [cityCode, setCityCode] = useState('');
     const [mistryName, setMistryName] = useState('');
+    const [siteCount, setSiteCount] = useState(1);
+    const [currentUser, setCurrentUser] = useState(null);
+
+    // Fetch User and Site Count
+    React.useEffect(() => {
+        const storedUser = localStorage.getItem('user');
+        if (storedUser) {
+            const parsedUser = JSON.parse(storedUser);
+            setCurrentUser(parsedUser);
+            fetchSiteCount(parsedUser.user_id);
+        }
+    }, []);
+
+    const fetchSiteCount = async (userId) => {
+        const { count, error } = await orderService.getNextSiteNumber(userId);
+        if (!error) {
+            setSiteCount(count);
+        }
+    };
 
     React.useEffect(() => {
         if (selectedCity) {
@@ -107,7 +126,7 @@ const NewOrder = () => {
         }
     }, [selectedCity]);
 
-    const getGeneratedId = () => {
+    const getGeneratedCustomerId = () => {
         if (!customerPhone || customerPhone.replace(/\D/g, '').length < 5) return '';
         if (!cityCode || !contractorName) return '';
 
@@ -117,15 +136,61 @@ const NewOrder = () => {
         if (customerType === 'Interiors/Architect') typePrefix = 'IA';
         else if (customerType === 'Site Supervisor') typePrefix = 'SS';
         else if (customerType === 'Mistry') typePrefix = 'Mi';
+        else if (customerType === 'Retailer') typePrefix = 'R';
+        else if (customerType === 'Distributor') typePrefix = 'D';
 
-        const nameDisplay = (customerType === 'Contractor' && nickname) ? `${contractorName}(${nickname})` : contractorName;
+        // Normalize text to Uppercase for consistency and uniqueness checks
+        const normContractorName = contractorName.toUpperCase();
+        const normNickname = nickname.toUpperCase();
+        const normMistryName = mistryName.toUpperCase();
+
+        const nameDisplay = (customerType === 'Contractor' && normNickname)
+            ? `${normContractorName}(${normNickname})`
+            : normContractorName;
 
         if (customerType === 'Mistry') {
-            // Mi/ Contractor ID –Mistry name
-            return `Mi/${phoneLast5}/${cityCode}/${nameDisplay}-${mistryName || ''}`;
+            return `Mi/${phoneLast5}/${cityCode}/${nameDisplay}-${normMistryName || ''}`;
         }
 
         return `${typePrefix}/${phoneLast5}/${cityCode}/${nameDisplay}`;
+    };
+
+    const getGeneratedSiteId = () => {
+        if (!currentUser || !cityCode) return '';
+
+        // MMYY
+        const date = new Date();
+        const mm = (date.getMonth() + 1).toString().padStart(2, '0');
+        const yy = date.getFullYear().toString().slice(-2);
+
+        // RM Name Code
+        const fullName = currentUser.full_name || currentUser.Name || currentUser.username || '';
+        let rmCode = 'XXX';
+
+        if (fullName) {
+            const names = fullName.trim().split(' ');
+            if (names.length >= 2) {
+                // First 2 letters of first name + First letter of last name
+                const first = names[0].substring(0, 2);
+                const last = names[names.length - 1].substring(0, 1);
+                rmCode = (first + last).toUpperCase();
+            } else if (names.length === 1) {
+                rmCode = names[0].substring(0, 3).toUpperCase();
+            }
+        }
+
+        // Site Number
+        const suffix = siteCount < 10 ? `0${siteCount}` : siteCount;
+
+        return `${mm}${yy}/${cityCode}/${rmCode}-${suffix}`;
+    };
+
+    const getGeneratedOrderId = () => {
+        const siteId = getGeneratedSiteId();
+        if (!siteId) return '';
+        // Order Number (Assuming 01 for new site creation context)
+        // Format: SiteID (01)
+        return `${siteId} (01)`;
     };
 
     // Reset fields when customer type changes
@@ -209,7 +274,9 @@ const NewOrder = () => {
                 logistics_mode: logistics, // Renamed from logistics_option
                 state: selectedState,
                 city: selectedCity,
-                order_id: getGeneratedId(),
+                order_id: getGeneratedOrderId(),
+                contractor_id: getGeneratedCustomerId(),
+                site_id: getGeneratedSiteId(),
                 nickname: nickname,
                 mistry_name: mistryName
             };
@@ -239,11 +306,12 @@ const NewOrder = () => {
             setStateSearch('');
             setSelectedCity('');
             setCitySearch('');
-            setCitySearch('');
+
             setOrderDate(new Date().toISOString().split('T')[0]);
             setNickname('');
             setCityCode('');
             setMistryName('');
+            if (currentUser) fetchSiteCount(currentUser.user_id); // Refresh site count
         } catch (error) {
             console.error(error);
             toast.error('Failed to create order');
@@ -293,6 +361,27 @@ const NewOrder = () => {
             <div className="flex-1 overflow-y-auto custom-scrollbar">
                 {activeTab === 'new' ? (
                     <form onSubmit={handleSubmit} className="max-w-5xl mx-auto space-y-6 pb-10">
+                        {/* Generated IDs Banner */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="bg-blue-50/50 border border-blue-100 p-4 rounded-xl flex flex-col justify-center items-center text-center group hover:bg-blue-50 transition-colors shadow-sm">
+                                <span className="text-xs font-bold text-blue-500 uppercase tracking-wider mb-1">Order ID</span>
+                                <span className="text-sm md:text-base font-bold text-slate-700 break-all">
+                                    {currentUser ? (getGeneratedOrderId() || <span className="font-normal text-slate-400 italic">Pending...</span>) : 'Auth Required'}
+                                </span>
+                            </div>
+                            <div className="bg-indigo-50/50 border border-indigo-100 p-4 rounded-xl flex flex-col justify-center items-center text-center group hover:bg-indigo-50 transition-colors shadow-sm">
+                                <span className="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-1">Contractor ID</span>
+                                <span className="text-sm md:text-base font-bold text-slate-700 break-all">
+                                    {getGeneratedCustomerId() || <span className="font-normal text-slate-400 italic">Pending...</span>}
+                                </span>
+                            </div>
+                            <div className="bg-violet-50/50 border border-violet-100 p-4 rounded-xl flex flex-col justify-center items-center text-center group hover:bg-violet-50 transition-colors shadow-sm">
+                                <span className="text-xs font-bold text-violet-500 uppercase tracking-wider mb-1">Site ID</span>
+                                <span className="text-sm md:text-base font-bold text-slate-700 break-all">
+                                    {currentUser ? (getGeneratedSiteId() || <span className="font-normal text-slate-400 italic">Pending...</span>) : 'Auth Required'}
+                                </span>
+                            </div>
+                        </div>
 
                         {/* Order Details Card */}
                         <div className="bg-white rounded-2xl shadow-sm border border-slate-200/60 p-6">
@@ -321,17 +410,9 @@ const NewOrder = () => {
                                         ))}
                                     </div>
                                     {!customerType && <p className="text-xs text-amber-600 mt-1.5 ml-1">Please select a customer type</p>}
-
-                                    {/* Generated ID Display */}
-                                    {customerType && (
-                                        <div className="mt-3 p-3 bg-slate-50 border border-slate-200 rounded-lg">
-                                            <p className="text-xs font-semibold text-slate-500 mb-1">Generated ID</p>
-                                            <p className="text-sm font-mono font-medium text-primary break-all">
-                                                {getGeneratedId() || <span className="text-slate-400 italic">Complete details to generate ID...</span>}
-                                            </p>
-                                        </div>
-                                    )}
                                 </div>
+
+                                {/* Old ID display removed */}
 
                                 {/* Order Date */}
                                 <div>
@@ -378,10 +459,15 @@ const NewOrder = () => {
                                         <input
                                             type="tel"
                                             value={customerPhone}
-                                            onChange={(e) => setCustomerPhone(e.target.value)}
+                                            onChange={(e) => {
+                                                const value = e.target.value.replace(/\D/g, '');
+                                                if (value.length <= 10) {
+                                                    setCustomerPhone(value);
+                                                }
+                                            }}
                                             required
                                             className="block w-full pl-10 pr-3 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors outline-none text-sm"
-                                            placeholder="Enter phone number"
+                                            placeholder="Enter 10-digit phone number"
                                         />
                                     </div>
                                 </div>
@@ -452,11 +538,16 @@ const NewOrder = () => {
                                             <Phone size={18} className="text-slate-400" />
                                         </div>
                                         <input
-                                            type="text"
+                                            type="tel"
                                             value={sitePoc}
-                                            onChange={(e) => setSitePoc(e.target.value)}
+                                            onChange={(e) => {
+                                                const value = e.target.value.replace(/\D/g, '');
+                                                if (value.length <= 10) {
+                                                    setSitePoc(value);
+                                                }
+                                            }}
                                             className="block w-full pl-10 pr-3 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors outline-none text-sm"
-                                            placeholder="Name or Phone number"
+                                            placeholder="Enter contact number"
                                         />
                                     </div>
                                 </div>
@@ -607,23 +698,7 @@ const NewOrder = () => {
                                     </div>
                                 </div>
 
-                                {/* City Code */}
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1.5">City Code</label>
-                                    <div className="relative">
-                                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                            <MapPin size={18} className="text-slate-400" />
-                                        </div>
-                                        <input
-                                            type="text"
-                                            value={cityCode}
-                                            onChange={(e) => setCityCode(e.target.value.toUpperCase())}
-                                            maxLength={3}
-                                            className="block w-full pl-10 pr-3 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors outline-none text-sm font-mono uppercase"
-                                            placeholder="XXX"
-                                        />
-                                    </div>
-                                </div>
+
 
                                 {/* Delivery Address */}
                                 <div className="md:col-span-2">
@@ -932,7 +1007,7 @@ const NewOrder = () => {
                                     <tbody className="divide-y divide-slate-100">
                                         {orderHistory.map((order) => (
                                             <tr key={order.order_id} className="hover:bg-slate-50/50 transition-colors">
-                                                <td className="px-6 py-4 font-medium text-primary cursor-pointer hover:underline whitespace-nowrap">
+                                                <td className="px-6 py-4 font-bold text-primary cursor-pointer hover:underline whitespace-nowrap">
                                                     {order.order_id}
                                                 </td>
                                                 <td className="px-6 py-4 text-slate-600 whitespace-nowrap">
@@ -944,7 +1019,7 @@ const NewOrder = () => {
                                                 <td className="px-6 py-4 text-slate-800 font-medium whitespace-nowrap">
                                                     {order.contractor_name}
                                                 </td>
-                                                <td className="px-6 py-4 text-slate-600 font-mono text-xs whitespace-nowrap">
+                                                <td className="px-6 py-4 text-slate-600 font-bold text-xs whitespace-nowrap">
                                                     {order.site_contact_number || 'N/A'}
                                                 </td>
                                                 <td className="px-6 py-4 text-slate-600 text-right whitespace-nowrap">
@@ -1001,104 +1076,175 @@ const NewOrder = () => {
                 )}
                 {/* Order Details Modal */}
                 {selectedOrder && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-                        <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
-                            <div className="p-6 border-b border-slate-100 flex items-center justify-between shrink-0">
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                        <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col md:flex-row">
+
+                            {/* Left Sidebar - Date & Status */}
+                            <div className="w-full md:w-80 bg-slate-50 border-r border-slate-100 p-8 flex flex-col gap-6 shrink-0 text-left">
                                 <div>
-                                    <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                                        <Package className="text-primary" size={24} />
-                                        Order #{selectedOrder.order_id}
-                                    </h3>
-                                    <p className="text-sm text-slate-500 mt-1">
-                                        {new Date(selectedOrder.order_date).toLocaleDateString()} • {selectedOrder.contractor_name}
-                                    </p>
+                                    <h3 className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">Order Date</h3>
+                                    <div className="flex items-center gap-3">
+                                        <div className="bg-white p-2 rounded-lg shadow-sm border border-slate-100">
+                                            <Calendar className="text-primary" size={24} />
+                                        </div>
+                                        <div>
+                                            <p className="text-2xl font-bold text-slate-800 leading-none">
+                                                {new Date(selectedOrder.order_date).getDate()}
+                                            </p>
+                                            <p className="text-sm font-medium text-slate-500">
+                                                {new Date(selectedOrder.order_date).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
+                                            </p>
+                                        </div>
+                                    </div>
                                 </div>
-                                <button
-                                    onClick={() => setSelectedOrder(null)}
-                                    className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
-                                >
-                                    <X size={24} />
-                                </button>
+
+                                <div className="h-px bg-slate-200 w-full"></div>
+
+                                <div>
+                                    <h3 className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-3">Status</h3>
+                                    <span className={`inline-flex items-center px-4 py-1.5 rounded-full text-sm font-semibold border ${selectedOrder.order_status === 'Completed' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
+                                        selectedOrder.order_status === 'Processing' ? 'bg-blue-50 text-blue-700 border-blue-100' :
+                                            'bg-amber-50 text-amber-700 border-amber-100'
+                                        }`}>
+                                        {selectedOrder.order_status || 'Pending'}
+                                    </span>
+                                </div>
+
+                                <div className="h-px bg-slate-200 w-full"></div>
+
+                                <div>
+                                    <h3 className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">Total Amount</h3>
+                                    <p className="text-3xl font-bold text-slate-800">₹ {selectedOrder.total_amount?.toLocaleString()}</p>
+                                </div>
+
+                                <div className="mt-auto pt-6">
+                                    <button
+                                        onClick={() => setSelectedOrder(null)}
+                                        className="w-full py-3 bg-white border border-slate-200 text-slate-600 font-semibold rounded-xl hover:bg-slate-100 transition-colors shadow-sm"
+                                    >
+                                        Close Details
+                                    </button>
+                                </div>
                             </div>
 
-                            <div className="p-6 overflow-y-auto custom-scrollbar space-y-6">
-                                {/* Contract Info */}
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    <div className="p-4 bg-slate-50 rounded-xl space-y-3">
-                                        <h4 className="font-semibold text-slate-700 flex items-center gap-2">
-                                            <User size={16} /> Customer Details
+                            {/* Right Content - Details */}
+                            <div className="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-8 bg-white text-left">
+
+                                {/* Header with IDs */}
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+                                    <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100">
+                                        <p className="text-xs text-slate-400 font-bold uppercase mb-1">Order ID</p>
+                                        <p className="text-sm font-bold text-slate-700 break-all">{selectedOrder.order_id}</p>
+                                    </div>
+                                    <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100">
+                                        <p className="text-xs text-slate-400 font-bold uppercase mb-1">Contractor ID</p>
+                                        <p className="text-sm font-bold text-slate-700 break-all">{selectedOrder.contractor_id || 'N/A'}</p>
+                                    </div>
+                                    <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100">
+                                        <p className="text-xs text-slate-400 font-bold uppercase mb-1">Site ID</p>
+                                        <p className="text-sm font-bold text-slate-700 break-all">{selectedOrder.site_id || 'N/A'}</p>
+                                    </div>
+                                </div>
+
+                                {/* Main Details Grid */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-8 mb-8">
+                                    {/* Contractor Info */}
+                                    <div>
+                                        <h4 className="flex items-center gap-2 font-semibold text-slate-800 mb-4 pb-2 border-b border-slate-100">
+                                            <User size={18} className="text-primary" /> Contractor Details
                                         </h4>
-                                        <div className="text-sm space-y-2 text-slate-600">
-                                            <div className="flex justify-between">
-                                                <span className="text-slate-500">Contractor:</span>
-                                                <span className="font-medium text-slate-800 whitespace-nowrap">{selectedOrder.contractor_name}</span>
+                                        <div className="space-y-4">
+                                            <div>
+                                                <p className="text-xs text-slate-400 uppercase font-semibold mb-0.5">Name</p>
+                                                <p className="text-slate-700 font-medium">{selectedOrder.contractor_name}</p>
                                             </div>
-                                            <div className="flex justify-between">
-                                                <span className="text-slate-500">Type:</span>
-                                                <span className="font-medium text-slate-800 whitespace-nowrap">{selectedOrder.customer_type || '-'}</span>
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div>
+                                                    <p className="text-xs text-slate-400 uppercase font-semibold mb-0.5">Type</p>
+                                                    <p className="text-slate-700">{selectedOrder.customer_type}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-xs text-slate-400 uppercase font-semibold mb-0.5">Phone</p>
+                                                    <p className="text-slate-700 font-bold">{selectedOrder.customer_phone || selectedOrder.site_contact_number || '-'}</p>
+                                                </div>
                                             </div>
-                                            <div className="flex justify-between">
-                                                <span className="text-slate-500">Contact:</span>
-                                                <span className="font-medium text-slate-800 whitespace-nowrap">{selectedOrder.site_contact_number || '-'}</span>
-                                            </div>
+                                            {(selectedOrder.nickname || selectedOrder.mistry_name) && (
+                                                <div>
+                                                    <p className="text-xs text-slate-400 uppercase font-semibold mb-0.5">
+                                                        {selectedOrder.mistry_name ? 'Mistry Name' : 'Nickname'}
+                                                    </p>
+                                                    <p className="text-slate-700">{selectedOrder.mistry_name || selectedOrder.nickname}</p>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
-                                    <div className="p-4 bg-slate-50 rounded-xl space-y-3">
-                                        <h4 className="font-semibold text-slate-700 flex items-center gap-2">
-                                            <MapPin size={16} /> Delivery Info
+
+                                    {/* Logistics & Payment */}
+                                    <div>
+                                        <h4 className="flex items-center gap-2 font-semibold text-slate-800 mb-4 pb-2 border-b border-slate-100">
+                                            <Truck size={18} className="text-primary" /> Delivery & Logistics
                                         </h4>
-                                        <div className="text-sm space-y-2 text-slate-600">
-                                            <div className="flex justify-between">
-                                                <span className="text-slate-500">State:</span>
-                                                <span className="font-medium text-slate-800 whitespace-nowrap">{selectedOrder.state || '-'}</span>
+                                        <div className="space-y-4">
+                                            <div>
+                                                <p className="text-xs text-slate-400 uppercase font-semibold mb-0.5">Address</p>
+                                                <p className="text-slate-700">{selectedOrder.delivery_address || '-'}</p>
+                                                {(selectedOrder.city || selectedOrder.state) && (
+                                                    <p className="text-slate-500 text-sm mt-0.5">{selectedOrder.city}, {selectedOrder.state}</p>
+                                                )}
                                             </div>
-                                            <div className="flex justify-between">
-                                                <span className="text-slate-500">City:</span>
-                                                <span className="font-medium text-slate-800 whitespace-nowrap">{selectedOrder.city || '-'}</span>
-                                            </div>
-                                            <div className="block mt-2">
-                                                <span className="text-slate-500 block text-xs mb-1">Address:</span>
-                                                <span className="font-medium text-slate-800 block">{selectedOrder.delivery_address || '-'}</span>
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div>
+                                                    <p className="text-xs text-slate-400 uppercase font-semibold mb-0.5">Logistics</p>
+                                                    <p className="text-slate-700">{selectedOrder.logistics_mode || '-'}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-xs text-slate-400 uppercase font-semibold mb-0.5">Challan Ref</p>
+                                                    <p className="text-slate-700">{selectedOrder.challan_reference || '-'}</p>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
 
-                                {/* Products Table */}
-                                <div>
-                                    <h4 className="font-semibold text-slate-700 mb-3 flex items-center gap-2">
-                                        <ShoppingBag size={18} /> Order Items
+                                {/* Products */}
+                                <div className="mb-8">
+                                    <h4 className="flex items-center gap-2 font-semibold text-slate-800 mb-4">
+                                        <ShoppingBag size={18} className="text-primary" /> Order Items
                                     </h4>
-                                    <div className="border border-slate-200 rounded-lg overflow-hidden overflow-x-auto">
+                                    <div className="border border-slate-200 rounded-xl overflow-hidden hover:border-slate-300 transition-colors">
                                         <table className="w-full text-sm text-left">
-                                            <thead className="bg-slate-50 border-b border-slate-200">
+                                            <thead className="bg-slate-50 border-b border-slate-200/60">
                                                 <tr>
-                                                    <th className="px-4 py-3 font-medium text-slate-600 whitespace-nowrap">Product</th>
-                                                    <th className="px-4 py-3 font-medium text-slate-600 text-right whitespace-nowrap">Qty</th>
-                                                    <th className="px-4 py-3 font-medium text-slate-600 text-right whitespace-nowrap">Price</th>
-                                                    <th className="px-4 py-3 font-medium text-slate-600 text-right whitespace-nowrap">Points</th>
-                                                    <th className="px-4 py-3 font-medium text-slate-600 text-right whitespace-nowrap">Total</th>
+                                                    <th className="px-5 py-3 font-semibold text-slate-600">Product</th>
+                                                    <th className="px-5 py-3 font-semibold text-slate-600 text-right">Qty</th>
+                                                    <th className="px-5 py-3 font-semibold text-slate-600 text-right">Price</th>
+                                                    <th className="px-5 py-3 font-semibold text-slate-600 text-right">Points</th>
+                                                    <th className="px-5 py-3 font-semibold text-slate-600 text-right">Total</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-slate-100">
-                                                {selectedOrder.items && selectedOrder.items.map((item, idx) => (
-                                                    <tr key={idx} className="hover:bg-slate-50/50">
-                                                        <td className="px-4 py-3 text-slate-800 font-medium whitespace-nowrap">{item.product_name}</td>
-                                                        <td className="px-4 py-3 text-slate-600 text-right whitespace-nowrap">{item.quantity}</td>
-                                                        <td className="px-4 py-3 text-slate-600 text-right whitespace-nowrap">₹{item.unit_price}</td>
-                                                        <td className="px-4 py-3 text-blue-600 text-right whitespace-nowrap">{item.reward_points}</td>
-                                                        <td className="px-4 py-3 text-slate-800 text-right font-semibold whitespace-nowrap">
-                                                            ₹{(item.quantity * item.unit_price).toLocaleString()}
-                                                        </td>
+                                                {selectedOrder.items && selectedOrder.items.length > 0 ? (
+                                                    selectedOrder.items.map((item, idx) => (
+                                                        <tr key={idx} className="hover:bg-slate-50/50">
+                                                            <td className="px-5 py-3 text-slate-700 font-medium">{item.product_name}</td>
+                                                            <td className="px-5 py-3 text-slate-600 text-right">{item.quantity}</td>
+                                                            <td className="px-5 py-3 text-slate-600 text-right">₹{item.unit_price}</td>
+                                                            <td className="px-5 py-3 text-blue-600 text-right">{item.reward_points}</td>
+                                                            <td className="px-5 py-3 text-slate-800 text-right font-semibold">₹{(item.quantity * item.unit_price).toLocaleString()}</td>
+                                                        </tr>
+                                                    ))
+                                                ) : (
+                                                    <tr>
+                                                        <td colSpan="5" className="px-5 py-4 text-center text-slate-500 italic">No items found</td>
                                                     </tr>
-                                                ))}
-                                                <tr className="bg-slate-50 font-bold">
-                                                    <td className="px-4 py-3 text-slate-800 whitespace-nowrap">Total</td>
-                                                    <td className="px-4 py-3 text-slate-800 text-right whitespace-nowrap">
+                                                )}
+                                                <tr className="bg-slate-50/80 font-semibold border-t border-slate-200">
+                                                    <td className="px-5 py-3 text-slate-800">Total</td>
+                                                    <td className="px-5 py-3 text-slate-800 text-right">
                                                         {selectedOrder.items?.reduce((s, i) => s + (i.quantity || 0), 0)}
                                                     </td>
                                                     <td colSpan="2"></td>
-                                                    <td className="px-4 py-3 text-slate-800 text-right text-base whitespace-nowrap">
+                                                    <td className="px-5 py-3 text-slate-800 text-right text-base">
                                                         ₹{selectedOrder.total_amount?.toLocaleString()}
                                                     </td>
                                                 </tr>
@@ -1107,32 +1253,37 @@ const NewOrder = () => {
                                     </div>
                                 </div>
 
-                                {/* Additional Info */}
-                                {(selectedOrder.point_of_contact_role || selectedOrder.remarks) && (
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                        {selectedOrder.point_of_contact_role && (
-                                            <div className="p-4 border border-slate-100 rounded-xl">
-                                                <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Point Role</h4>
-                                                <p className="text-slate-800 font-medium">{selectedOrder.point_of_contact_role}</p>
+                                {/* Footer Info */}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    {selectedOrder.remarks && (
+                                        <div className="bg-amber-50/50 border border-amber-100 p-4 rounded-xl">
+                                            <p className="text-xs text-amber-600 font-bold uppercase mb-1">Notes</p>
+                                            <p className="text-slate-700 text-sm">{selectedOrder.remarks}</p>
+                                        </div>
+                                    )}
+                                    <div className="bg-slate-50 border border-slate-100 p-4 rounded-xl">
+                                        <p className="text-xs text-slate-500 font-bold uppercase mb-1">Payment Info</p>
+                                        <div className="text-sm">
+                                            <div className="flex justify-between mb-1">
+                                                <span className="text-slate-500">Terms:</span>
+                                                <span className="font-medium text-slate-700">{selectedOrder.payment_terms || 'Standard'}</span>
                                             </div>
-                                        )}
-                                        {selectedOrder.remarks && (
-                                            <div className="p-4 border border-slate-100 rounded-xl">
-                                                <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Notes</h4>
-                                                <p className="text-slate-600 text-sm whitespace-pre-wrap">{selectedOrder.remarks}</p>
-                                            </div>
-                                        )}
+                                            {selectedOrder.manual_payment_days && (
+                                                <div className="flex justify-between mb-1">
+                                                    <span className="text-slate-500">Days:</span>
+                                                    <span className="font-medium text-slate-700">{selectedOrder.manual_payment_days}</span>
+                                                </div>
+                                            )}
+                                            {selectedOrder.point_of_contact_role && (
+                                                <div className="flex justify-between">
+                                                    <span className="text-slate-500">Role:</span>
+                                                    <span className="font-medium text-slate-700">{selectedOrder.point_of_contact_role}</span>
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
-                                )}
-                            </div>
+                                </div>
 
-                            <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end">
-                                <button
-                                    onClick={() => setSelectedOrder(null)}
-                                    className="px-6 py-2 bg-white border border-slate-200 text-slate-700 font-medium rounded-lg hover:bg-slate-50 transition-colors shadow-sm"
-                                >
-                                    Close
-                                </button>
                             </div>
                         </div>
                     </div>
