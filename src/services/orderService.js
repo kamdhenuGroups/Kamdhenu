@@ -9,7 +9,64 @@ export const CUSTOMER_TYPES = [
     'Mistry'
 ];
 
+export const POINT_ROLES = [
+    'Tiler', 'Site Mistri', 'Assistant', 'Incharge', 'Purchase Manager'
+];
+
+export const PAYMENT_OPTIONS = [
+    'Advance Payment', 'Same Day', 'Manual entry for days'
+];
+
+export const PRODUCTS = [
+    { name: 'K50 Floor & Wall Tile Adhesive', price: 600 },
+    { name: 'K60 Superior Floor & Wall Tile Adhesive', price: 800 },
+    { name: 'K80 Superior Tile & Stone Adhesive', price: 1000 },
+    { name: 'K90 Paramount Tile & Stone Adhesive', price: 1200 },
+    { name: 'Kamdhenu Infinity Stone & Tile Adhesive', price: 1500 },
+    { name: 'Tile Grout', price: 300 },
+    { name: 'Kamdhenu Infinia', price: 2000 }
+];
+
 export const orderService = {
+    // Calculate total amount for order items
+    calculateOrderTotal: (items) => {
+        return items.reduce((sum, item) => sum + ((item.quantity || 0) * (item.price || 0)), 0);
+    },
+
+    // Prepare the order payload from form data
+    prepareOrderPayload: (formData) => {
+        const {
+            orderDate, contractorName, customerType, customerPhone, items,
+            notes, challanName, sitePoc, deliveryAddress,
+            pointRole, paymentTerms, manualPaymentDays, logistics,
+            state, city, orderId, contractorId, siteId, nickname, mistryName
+        } = formData;
+
+        return {
+            order_date: orderDate,
+            contractor_name: contractorName,
+            customer_type: customerType,
+            customer_phone: customerPhone,
+            items: items,
+            total_amount: orderService.calculateOrderTotal(items),
+            remarks: notes,
+            challan_reference: challanName,
+            site_contact_number: sitePoc,
+            delivery_address: deliveryAddress,
+            point_of_contact_role: pointRole,
+            payment_terms: paymentTerms,
+            manual_payment_days: manualPaymentDays ? parseInt(manualPaymentDays) : null,
+            logistics_mode: logistics,
+            state: state,
+            city: city,
+            order_id: orderId,
+            contractor_id: contractorId,
+            site_id: siteId,
+            nickname: nickname,
+            mistry_name: mistryName
+        };
+    },
+
     // Create a new order
     createOrder: async (orderData) => {
         try {
@@ -147,23 +204,233 @@ export const orderService = {
         }
     },
 
-    // Get next site number for a user
-    getNextSiteNumber: async (userId) => {
+    // Get unique contractors for dropdown
+    getUniqueContractors: async () => {
         try {
             const { data, error } = await supabase
                 .from('orders')
-                .select('site_id')
-                .eq('created_by_user_id', userId)
-                .not('site_id', 'is', null);
+                .select('contractor_name, customer_phone, customer_type, nickname, mistry_name, contractor_id, site_contact_number, delivery_address, point_of_contact_role, payment_terms, manual_payment_days, logistics_mode, state, city')
+                .order('created_at', { ascending: false });
 
             if (error) throw error;
 
-            // Get unique site IDs
-            const uniqueSiteIds = new Set(data.map(order => order.site_id).filter(Boolean));
-            return { count: uniqueSiteIds.size + 1, error: null };
+            // Deduplicate by contractor_name (normalized)
+            const seen = new Set();
+            const uniqueContractors = [];
+
+            for (const order of data) {
+                if (!order.contractor_name) continue;
+                const key = order.contractor_name.toLowerCase().trim();
+                if (!seen.has(key)) {
+                    seen.add(key);
+                    uniqueContractors.push(order);
+                }
+            }
+            return { data: uniqueContractors, error: null };
         } catch (error) {
-            console.error('Error fetching site count:', error);
-            return { count: 1, error };
+            console.error('Error fetching contractors:', error);
+            return { data: [], error };
         }
+    },
+
+    // Get addresses by city
+    getAddressesByCity: async (city) => {
+        try {
+            const { data, error } = await supabase
+                .from('orders')
+                .select('delivery_address')
+                .eq('city', city)
+                .neq('delivery_address', null)
+                .order('created_at', { ascending: false });
+
+            if (error) throw error;
+
+            const uniqueAddresses = [...new Set(data
+                .map(o => o.delivery_address)
+                .filter(a => a && a.trim().length > 0)
+            )];
+
+            return { data: uniqueAddresses, error: null };
+        } catch (error) {
+            console.error('Error fetching addresses:', error);
+            return { data: [], error };
+        }
+    },
+
+    // Get next site number and order number for a user/city/contractor
+    getOrderCounts: async (userId, city, contractorId, deliveryAddress = '') => {
+        try {
+            // 1. Get all orders for this user and city
+            let query = supabase
+                .from('orders')
+                .select('site_id, order_id, delivery_address, contractor_id')
+                .eq('created_by_user_id', userId)
+                .not('site_id', 'is', null);
+
+            if (city) {
+                query = query.eq('city', city);
+            }
+
+            const { data, error } = await query;
+
+            if (error) throw error;
+
+            let siteNumber = 1;
+            let orderNumber = 1;
+            let existingSiteFound = false;
+
+            // Normalize delivery address for comparison
+            const normAddress = deliveryAddress ? deliveryAddress.toLowerCase().trim() : '';
+
+            // Check if this address already has a site number in this city (for this RM)
+            if (normAddress && normAddress.length > 3) {
+                const addressMatchOrder = data.find(o =>
+                    o.delivery_address && o.delivery_address.toLowerCase().trim() === normAddress
+                );
+
+                if (addressMatchOrder) {
+                    existingSiteFound = true;
+                    // Extract site number
+                    const parts = addressMatchOrder.site_id.split('-');
+                    if (parts.length > 1) {
+                        const num = parseInt(parts[parts.length - 1]);
+                        if (!isNaN(num)) {
+                            siteNumber = num;
+                        }
+                    }
+                }
+            }
+
+            // If no existing site for address found, find next available site number
+            if (!existingSiteFound) {
+                const uniqueSiteIds = new Set(data.map(order => order.site_id).filter(Boolean));
+                let maxSiteNum = 0;
+
+                uniqueSiteIds.forEach(sid => {
+                    const parts = sid.split('-');
+                    if (parts.length > 1) {
+                        const num = parseInt(parts[parts.length - 1]);
+                        if (!isNaN(num) && num > maxSiteNum) {
+                            maxSiteNum = num;
+                        }
+                    }
+                });
+
+                siteNumber = maxSiteNum + 1;
+            }
+
+            // Calculate next order number based on the determined siteNumber
+            let maxOrderNum = 0;
+
+            data.forEach(order => {
+                const parts = order.site_id.split('-');
+                if (parts.length > 1) {
+                    const sNum = parseInt(parts[parts.length - 1]);
+                    if (sNum === siteNumber) {
+                        const match = order.order_id?.match(/\((\d+)\)$/);
+                        if (match && match[1]) {
+                            const num = parseInt(match[1]);
+                            if (num > maxOrderNum) maxOrderNum = num;
+                        } else {
+                            if (maxOrderNum < 1) maxOrderNum = 1;
+                        }
+                    }
+                }
+            });
+
+            orderNumber = maxOrderNum + 1;
+
+            return { siteNumber, orderNumber, error: null };
+        } catch (error) {
+            console.error('Error fetching order counts:', error);
+            return { siteNumber: 1, orderNumber: 1, error };
+        }
+    },
+
+    // Get next site number for a user (Deprecated but kept for compatibility if needed)
+    getNextSiteNumber: async (userId, city) => {
+        // forwarding to new logic with no contractor
+        const result = await orderService.getOrderCounts(userId, city, null);
+        return { count: result.siteNumber, error: result.error };
+    }
+};
+
+export const idGenerator = {
+    getCityCode: (cityName) => {
+        if (!cityName) return '';
+        let code = cityName.substring(0, 3).toUpperCase();
+        if (cityName.toLowerCase() === 'raipur') code = 'RPR';
+        if (cityName.toLowerCase() === 'nagpur') code = 'NAG';
+        return code;
+    },
+
+    getRMCode: (user) => {
+        if (!user) return 'XXX';
+        const fullName = user.full_name || user.Name || user.username || '';
+        if (!fullName) return 'XXX';
+
+        const names = fullName.trim().split(' ');
+        if (names.length >= 2) {
+            // First 2 letters of first name + First letter of last name
+            const first = names[0].substring(0, 2);
+            const last = names[names.length - 1].substring(0, 1);
+            return (first + last).toUpperCase();
+        } else if (names.length === 1) {
+            return names[0].substring(0, 3).toUpperCase();
+        }
+        return 'XXX';
+    },
+
+    generateCustomerId: ({ customerPhone, cityCode, contractorName, customerType, nickname, mistryName }) => {
+        if (!customerPhone || customerPhone.replace(/\D/g, '').length < 5) return '';
+        if (!cityCode || !contractorName) return '';
+
+        const phoneLast5 = customerPhone.replace(/\D/g, '').slice(-5);
+
+        let typePrefix = 'C';
+        if (customerType === 'Interiors/Architect') typePrefix = 'IA';
+        else if (customerType === 'Site Supervisor') typePrefix = 'SS';
+        else if (customerType === 'Mistry') typePrefix = 'Mi';
+        else if (customerType === 'Retailer') typePrefix = 'R';
+        else if (customerType === 'Distributor') typePrefix = 'D';
+
+        // Normalize text to Uppercase for consistency and uniqueness checks
+        const normContractorName = contractorName.toUpperCase();
+        const normNickname = nickname ? nickname.toUpperCase() : '';
+        const normMistryName = mistryName ? mistryName.toUpperCase() : '';
+
+        const nameDisplay = (customerType === 'Contractor' && normNickname)
+            ? `${normContractorName}(${normNickname})`
+            : normContractorName;
+
+        if (customerType === 'Mistry') {
+            return `Mi/${phoneLast5}/${cityCode}/${nameDisplay}-${normMistryName || ''}`;
+        }
+
+        return `${typePrefix}/${phoneLast5}/${cityCode}/${nameDisplay}`;
+    },
+
+    generateSiteId: ({ user, cityCode, siteCount }) => {
+        if (!user || !cityCode) return '';
+
+        // MMYY
+        const date = new Date();
+        const mm = (date.getMonth() + 1).toString().padStart(2, '0');
+        const yy = date.getFullYear().toString().slice(-2);
+
+        // RM Name Code
+        const rmCode = idGenerator.getRMCode(user);
+
+        // Site Number
+        const suffix = siteCount < 10 ? `0${siteCount}` : siteCount;
+
+        return `${mm}${yy}/${cityCode}/${rmCode}-${suffix}`;
+    },
+
+    generateOrderId: (siteId, orderNumber = 1) => {
+        if (!siteId) return '';
+        // Order Number provided or default to 1
+        const numStr = orderNumber < 10 ? `0${orderNumber}` : orderNumber;
+        return `${siteId} (${numStr})`;
     }
 };
