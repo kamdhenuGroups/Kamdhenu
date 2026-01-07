@@ -22,7 +22,8 @@ const ITEMS_PER_PAGE = 6;
 const ALL_PAGES = [
     { id: 'my-profile', label: 'My Profile' },
     { id: 'settings', label: 'Settings' },
-    { id: 'new-order', label: 'New Order' }
+    { id: 'new-order', label: 'New Order' },
+    { id: 'leads', label: 'Leads' }
 ];
 
 const DEFAULT_USER_PAGES = ['my-profile'];

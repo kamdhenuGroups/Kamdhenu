@@ -7,6 +7,7 @@ import MyProfile from './pages/MyProfile';
 import ProtectedRoute from './components/ProtectedRoute';
 import Settings from './pages/Settings';
 import NewOrder from './pages/NewOrder';
+import Leads from './pages/Leads';
 
 
 
@@ -28,6 +29,7 @@ function App() {
             <Route path="my-profile" element={<MyProfile />} />
             <Route path="settings" element={<Settings />} />
             <Route path="new-order" element={<NewOrder />} />
+            <Route path="leads" element={<Leads />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

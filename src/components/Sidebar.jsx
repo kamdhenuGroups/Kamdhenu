@@ -10,7 +10,8 @@ import {
   ChevronDown,
   ChevronUp,
   Settings,
-  ShoppingCart
+  ShoppingCart,
+  Users
 } from 'lucide-react';
 
 const Sidebar = ({ onClose }) => {
@@ -26,6 +27,7 @@ const Sidebar = ({ onClose }) => {
   /* Combined Master Menu List for Permission Checking */
   const MASTER_MENU_ITEMS = [
     { path: '/new-order', icon: ShoppingCart, label: 'New Order', id: 'new-order' },
+    { path: '/leads', icon: Users, label: 'Leads', id: 'leads' },
     { path: '/settings', icon: Settings, label: 'Settings', id: 'settings' },
   ];
 

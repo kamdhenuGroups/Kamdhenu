@@ -124,15 +124,7 @@ const Header = ({ children }) => {
       <div className="flex justify-between items-center max-w-7xl mx-auto w-full">
         <div className="flex items-center gap-4 flex-1">
           {children}
-          {location.pathname === '/new-order' && (
-            <div className="pl-12 lg:pl-0">
-              <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
-                <ShoppingCart className="text-primary" size={24} />
-                Order Management
-              </h1>
-              <p className="text-slate-500 text-xs sm:text-sm hidden sm:block">Create and manage contractor orders.</p>
-            </div>
-          )}
+          {/* Order Management Header removed */}
         </div>
 
         <div className="flex items-center space-x-4 sm:space-x-6">

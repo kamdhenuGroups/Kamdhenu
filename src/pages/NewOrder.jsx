@@ -147,15 +147,35 @@ const NewOrder = () => {
     const logisticsDropdown = useDropdownPosition(showLogisticsDropdown);
     const paymentDropdown = useDropdownPosition(showPaymentDropdown);
 
-    // Fetch contractors on mount
+    // Points Allocation State
+    const [pointsAllocations, setPointsAllocations] = useState([]);
+    const [currentAllocation, setCurrentAllocation] = useState({
+        role: '',
+        name: '',
+        phoneLast4: '',
+        points: ''
+    });
+    const [showAllocationRoleDropdown, setShowAllocationRoleDropdown] = useState(false);
+    const allocationRoleDropdown = useDropdownPosition(showAllocationRoleDropdown); // Reuse generic hook if works, or just basic logic
+
+
+    const [availableBeneficiaries, setAvailableBeneficiaries] = useState([]);
+    const [showBeneficiaryDropdown, setShowBeneficiaryDropdown] = useState(false);
+    const beneficiaryDropdown = useDropdownPosition(showBeneficiaryDropdown);
+    const [isExistingBeneficiary, setIsExistingBeneficiary] = useState(false);
+
+    // Fetch contractors and beneficiaries on mount
     React.useEffect(() => {
-        const loadContractors = async () => {
-            const { data } = await orderService.getUniqueContractors();
-            if (data) {
-                setAvailableContractors(data);
-            }
+        const loadData = async () => {
+            const [contractorsRes, beneficiariesRes] = await Promise.all([
+                orderService.getUniqueContractors(),
+                orderService.getUniqueBeneficiaries()
+            ]);
+
+            if (contractorsRes.data) setAvailableContractors(contractorsRes.data);
+            if (beneficiariesRes.data) setAvailableBeneficiaries(beneficiariesRes.data);
         };
-        loadContractors();
+        loadData();
     }, []);
 
     // Fetch User and Initial Counts
@@ -278,7 +298,79 @@ const NewOrder = () => {
         })));
     };
 
+    // Points Logic
+    const totalOrderPoints = React.useMemo(() => orderService.calculateOrderPoints(items), [items]);
 
+    // Recalculate allocated points whenever the allocations change
+    const totalAllocatedPoints = React.useMemo(() =>
+        pointsAllocations.reduce((sum, a) => sum + (parseInt(a.points) || 0), 0)
+        , [pointsAllocations]);
+
+    const remainingPoints = totalOrderPoints - totalAllocatedPoints;
+
+    const handleAddAllocation = () => {
+        const { role, name, phoneLast4, points } = currentAllocation;
+
+        if (!role || !name || !phoneLast4 || !points) {
+            toast.error('Please fill all allocation fields');
+            return;
+        }
+
+        if (phoneLast4.length !== 4) {
+            toast.error('Phone last digits must be exactly 4 numbers');
+            return;
+        }
+
+        const pointsNum = parseInt(points);
+        if (isNaN(pointsNum) || pointsNum <= 0) {
+            toast.error('Points must be a valid positive number');
+            return;
+        }
+
+        if (pointsNum > remainingPoints) {
+            toast.error(`Cannot allocate more than remaining points (${remainingPoints})`);
+            return;
+        }
+
+        setPointsAllocations([
+            ...pointsAllocations,
+            { ...currentAllocation, id: Date.now(), points: pointsNum }
+        ]);
+
+        // Reset form
+        setCurrentAllocation({
+            role: '',
+            name: '',
+            phoneLast4: '',
+            points: ''
+        });
+        setIsExistingBeneficiary(false);
+    };
+
+    const handleRemoveAllocation = (id) => {
+        setPointsAllocations(pointsAllocations.filter(a => a.id !== id));
+    };
+
+
+
+
+    const handleClearCustomer = () => {
+        setContractorName('');
+        setCustomerPhone('');
+        setCustomerType('');
+        setNickname('');
+        setMistryName('');
+        setChallanName('');
+        setSitePoc('');
+        setDeliveryAddress('');
+        setPointRole('');
+        setPaymentTerms('');
+        setManualPaymentDays('');
+        setLogistics('');
+        setSelectedState('');
+        setSelectedCity('');
+        setIsExistingBeneficiary(false);
+    };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -287,6 +379,16 @@ const NewOrder = () => {
             toast.error('Please select a customer type');
             return;
         }
+
+        const totalPoints = orderService.calculateOrderPoints(items);
+        if (totalPoints > 0) {
+            const allocated = pointsAllocations.reduce((acc, curr) => acc + (parseInt(curr.points) || 0), 0);
+            if (allocated !== totalPoints) {
+                toast.error(`Please allocate all ${totalPoints} points. Remaining: ${totalPoints - allocated}`);
+                return;
+            }
+        }
+
 
         setLoading(true);
 
@@ -311,7 +413,8 @@ const NewOrder = () => {
                 contractorId: getGeneratedCustomerId(),
                 siteId: getGeneratedSiteId(),
                 nickname,
-                mistryName
+                mistryName,
+                pointsAllocations
             });
 
             const { data, error } = await orderService.createOrder(orderPayload);
@@ -342,10 +445,20 @@ const NewOrder = () => {
 
             setOrderDate(new Date().toISOString().split('T')[0]);
             setNickname('');
-            setNickname('');
             setCityCode('');
             setMistryName('');
+            setPointsAllocations([]);
+            setPointsAllocations([]);
+            setCurrentAllocation({
+                role: '',
+                name: '',
+                phoneLast4: '',
+                points: ''
+            });
+            setIsExistingBeneficiary(false);
+
             if (currentUser && selectedCity) {
+
                 // Determine the next counts based on cleared form (likely new order context)
                 // But ideally we just refresh with empty contractor ID to get next new site number
                 fetchOrderCounts(currentUser.user_id, selectedCity, '', '');
@@ -378,27 +491,31 @@ const NewOrder = () => {
 
 
             {/* Tab Navigation */}
-            <div className="flex bg-slate-100 p-1 rounded-xl w-fit shrink-0">
-                <button
-                    onClick={() => setActiveTab('new')}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === 'new'
-                        ? 'bg-white text-primary shadow-sm'
-                        : 'text-slate-500 hover:text-slate-700'
-                        }`}
-                >
-                    <ShoppingBag size={18} />
-                    New Order
-                </button>
-                <button
-                    onClick={() => setActiveTab('history')}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === 'history'
-                        ? 'bg-white text-primary shadow-sm'
-                        : 'text-slate-500 hover:text-slate-700'
-                        }`}
-                >
-                    <History size={18} />
-                    Order History
-                </button>
+            {/* Header & Tabs */}
+            <div className="flex flex-col sm:flex-row sm:items-center gap-4 shrink-0">
+                <h1 className="text-xl font-bold text-slate-800">Order Management</h1>
+                <div className="flex bg-slate-100 p-1 rounded-xl w-fit">
+                    <button
+                        onClick={() => setActiveTab('new')}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === 'new'
+                            ? 'bg-white text-primary shadow-sm'
+                            : 'text-slate-500 hover:text-slate-700'
+                            }`}
+                    >
+                        <ShoppingBag size={18} />
+                        New Order
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('history')}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === 'history'
+                            ? 'bg-white text-primary shadow-sm'
+                            : 'text-slate-500 hover:text-slate-700'
+                            }`}
+                    >
+                        <History size={18} />
+                        Order History
+                    </button>
+                </div>
             </div>
 
             {/* Main Content */}
@@ -482,19 +599,38 @@ const NewOrder = () => {
                                         <div className="md:col-span-2">
                                             <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Customer Type</label>
                                             <div className="flex flex-wrap gap-3">
-                                                {CUSTOMER_TYPES.map(type => (
+                                                {CUSTOMER_TYPES.map(type => {
+                                                    const isDisabled = existingContractor &&
+                                                        type !== existingContractor.customer_type &&
+                                                        type !== 'Mistry';
+
+                                                    return (
+                                                        <button
+                                                            key={type}
+                                                            type="button"
+                                                            onClick={() => setCustomerType(type)}
+                                                            disabled={isDisabled}
+                                                            className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 border ${customerType === type
+                                                                ? 'bg-slate-800 text-white border-slate-800 shadow-md transform scale-105'
+                                                                : isDisabled
+                                                                    ? 'bg-slate-50 text-slate-300 border-slate-100 cursor-not-allowed'
+                                                                    : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                                                                }`}
+                                                        >
+                                                            {type}
+                                                        </button>
+                                                    );
+                                                })}
+                                                {(contractorName || customerType) && (
                                                     <button
-                                                        key={type}
                                                         type="button"
-                                                        onClick={() => setCustomerType(type)}
-                                                        className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 border ${customerType === type
-                                                            ? 'bg-slate-800 text-white border-slate-800 shadow-md transform scale-105'
-                                                            : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
-                                                            }`}
+                                                        onClick={handleClearCustomer}
+                                                        className="px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 hover:border-red-200 flex items-center gap-2"
                                                     >
-                                                        {type}
+                                                        <X size={14} />
+                                                        Clear
                                                     </button>
-                                                ))}
+                                                )}
                                             </div>
                                             {!customerType && <p className="text-xs text-amber-600 mt-2 font-medium flex items-center gap-1"><span className="w-1 h-1 rounded-full bg-amber-600"></span> Please select a customer type</p>}
                                         </div>
@@ -560,10 +696,13 @@ const NewOrder = () => {
                                                                         }}
                                                                     >
                                                                         <div className="flex justify-between items-center">
-                                                                            <span className="text-sm font-bold text-slate-700 group-hover:text-primary transition-colors">{contractor.contractor_name}</span>
+                                                                            <span className="text-sm font-bold text-slate-700 group-hover:text-primary transition-colors">
+                                                                                {contractor.contractor_name}
+                                                                                {contractor.customer_type === 'Contractor' && contractor.nickname && <span className="text-slate-400 font-normal ml-1">({contractor.nickname})</span>}
+                                                                            </span>
                                                                             <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200 uppercase tracking-wide">{contractor.customer_type || 'Unknown'}</span>
                                                                         </div>
-                                                                        {(contractor.customer_phone || contractor.nickname) && (
+                                                                        {(contractor.customer_phone || (contractor.customer_type === 'Mistry' && contractor.contractor_id)) && (
                                                                             <div className="text-xs text-slate-500 mt-1 flex items-center gap-2">
                                                                                 {contractor.customer_phone && (
                                                                                     <span className="flex items-center gap-1">
@@ -571,9 +710,10 @@ const NewOrder = () => {
                                                                                         {contractor.customer_phone}
                                                                                     </span>
                                                                                 )}
-                                                                                {contractor.nickname && (
+                                                                                {/* For Mistry, show linked Contractor Name derived from ID */}
+                                                                                {contractor.customer_type === 'Mistry' && contractor.contractor_id && (
                                                                                     <span className="flex items-center gap-1 text-slate-400">
-                                                                                        • {contractor.nickname}
+                                                                                        • {contractor.contractor_id.split('/')[3]?.split('-')[0]}
                                                                                     </span>
                                                                                 )}
                                                                             </div>
@@ -960,10 +1100,9 @@ const NewOrder = () => {
                                                                         key={idx}
                                                                         className="px-4 py-3 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0"
                                                                         onClick={() => {
-                                                                            const selectedProduct = PRODUCTS.find(prod => prod.name === p.name);
                                                                             setItems(items.map(i =>
                                                                                 i.id === item.id
-                                                                                    ? { ...i, product: p.name, price: selectedProduct ? selectedProduct.price : 0, showDropdown: false }
+                                                                                    ? { ...i, product: p.name, showDropdown: false }
                                                                                     : i
                                                                             ));
                                                                         }}
@@ -1056,54 +1195,203 @@ const NewOrder = () => {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
                             {/* Points Allocation */}
-                            <div className="bg-white rounded-2xl shadow-sm border border-slate-200/60 h-full">
-                                <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center gap-3">
-                                    <div className="bg-white p-1.5 rounded-lg border border-slate-200 shadow-sm text-primary">
-                                        <Award size={18} />
+                            <div className="bg-white rounded-2xl shadow-sm border border-slate-200/60 h-full flex flex-col">
+                                <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center gap-3 justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className="bg-white p-1.5 rounded-lg border border-slate-200 shadow-sm text-primary">
+                                            <Award size={18} />
+                                        </div>
+                                        <h2 className="text-lg font-bold text-slate-800">Points Allocation</h2>
                                     </div>
-                                    <h2 className="text-lg font-bold text-slate-800">Points Allocation</h2>
+                                    <div className="flex flex-col items-end">
+                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Remaining</span>
+                                        <span className={`text-lg font-bold ${remainingPoints === 0 ? 'text-emerald-600' : 'text-amber-500'}`}>
+                                            {remainingPoints} / {totalOrderPoints}
+                                        </span>
+                                    </div>
                                 </div>
-                                <div className="p-6">
-                                    <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Points Beneficiary</label>
-                                    <div className="relative">
-                                        <div
-                                            onClick={() => setShowPointDropdown(!showPointDropdown)}
-                                            className="block w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer hover:bg-white focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary transition-all text-sm font-medium flex items-center justify-between"
-                                        >
-                                            <span className={pointRole ? "text-slate-800" : "text-slate-400"}>
-                                                {pointRole || "Select Role"}
-                                            </span>
-                                            <ChevronDown size={16} className={`text-slate-400 transition-transform ${showPointDropdown ? 'rotate-180' : ''}`} />
+                                <div className="p-6 flex-1 flex flex-col gap-4">
+
+                                    {/* Allocation Form */}
+                                    <div className="space-y-3 p-4 bg-slate-50 rounded-xl border border-slate-100">
+
+                                        {/* Role Select & User Load */}
+                                        {/* Role Select & User Load */}
+                                        <div className="flex gap-3">
+                                            {/* Existing User Dropdown */}
+                                            <div className="relative flex-1">
+                                                <div
+                                                    onClick={() => setShowBeneficiaryDropdown(!showBeneficiaryDropdown)}
+                                                    className="block w-full px-4 py-2 bg-white border border-slate-200 rounded-lg cursor-pointer hover:border-primary/50 transition-all text-sm font-medium flex items-center justify-between"
+                                                >
+                                                    <span className={isExistingBeneficiary ? "text-slate-800" : "text-slate-400"}>
+                                                        {isExistingBeneficiary && currentAllocation.name ? currentAllocation.name : "Load User"}
+                                                    </span>
+                                                    <div className="flex items-center gap-1">
+                                                        <User size={14} className="text-slate-400" />
+                                                        <ChevronDown size={14} className={`text-slate-400 transition-transform ${showBeneficiaryDropdown ? 'rotate-180' : ''}`} />
+                                                    </div>
+                                                </div>
+
+                                                {showBeneficiaryDropdown && (
+                                                    <>
+                                                        <div className="fixed inset-0 z-10" onClick={() => setShowBeneficiaryDropdown(false)}></div>
+                                                        <div
+                                                            ref={beneficiaryDropdown.ref}
+                                                            className={`absolute z-20 w-full bg-white border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto custom-scrollbar mt-1 animate-in fade-in zoom-in-95 duration-100 ${beneficiaryDropdown.positionClass}`}
+                                                        >
+                                                            <div
+                                                                className="px-4 py-2 hover:bg-slate-50 cursor-pointer border-b border-slate-50 text-sm italic text-slate-500"
+                                                                onClick={() => {
+                                                                    setIsExistingBeneficiary(false);
+                                                                    setCurrentAllocation({ role: '', name: '', phoneLast4: '', points: currentAllocation.points });
+                                                                    setShowBeneficiaryDropdown(false);
+                                                                }}
+                                                            >
+                                                                -- New User --
+                                                            </div>
+                                                            {availableBeneficiaries.map((b, idx) => (
+                                                                <div
+                                                                    key={idx}
+                                                                    className="px-4 py-2 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0 text-sm text-slate-600"
+                                                                    onClick={() => {
+                                                                        setCurrentAllocation({
+                                                                            ...currentAllocation,
+                                                                            role: b.role,
+                                                                            name: b.person_name,
+                                                                            phoneLast4: b.phone_last_4
+                                                                        });
+                                                                        setIsExistingBeneficiary(true);
+                                                                        setShowBeneficiaryDropdown(false);
+                                                                    }}
+                                                                >
+                                                                    <div className="font-semibold">{b.person_name}</div>
+                                                                    <div className="text-[10px] text-slate-400">{b.role}-{b.phone_last_4}</div>
+                                                                </div>
+                                                            ))}
+                                                            {availableBeneficiaries.length === 0 && (
+                                                                <div className="px-4 py-2 text-xs text-slate-400 text-center">
+                                                                    No existing users found.
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </>
+                                                )}
+                                            </div>
+
+                                            {/* Role Select */}
+                                            <div className="relative flex-1">
+                                                <div
+                                                    onClick={() => !isExistingBeneficiary && setShowAllocationRoleDropdown(!showAllocationRoleDropdown)}
+                                                    className={`block w-full px-4 py-2 border border-slate-200 rounded-lg transition-all text-sm font-medium flex items-center justify-between ${isExistingBeneficiary ? 'bg-slate-100 cursor-not-allowed' : 'bg-white cursor-pointer hover:border-primary/50'}`}
+                                                >
+                                                    <span className={currentAllocation.role ? "text-slate-800" : "text-slate-400"}>
+                                                        {currentAllocation.role || "Select Role"}
+                                                    </span>
+                                                    <ChevronDown size={14} className={`text-slate-400 transition-transform ${showAllocationRoleDropdown ? 'rotate-180' : ''}`} />
+                                                </div>
+
+                                                {showAllocationRoleDropdown && !isExistingBeneficiary && (
+                                                    <>
+                                                        <div className="fixed inset-0 z-10" onClick={() => setShowAllocationRoleDropdown(false)}></div>
+                                                        <div className="absolute z-20 w-full bg-white border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto custom-scrollbar mt-1 animate-in fade-in zoom-in-95 duration-100">
+                                                            {POINT_ROLES.map(role => (
+                                                                <div
+                                                                    key={role}
+                                                                    className={`px-4 py-2 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0 text-sm ${currentAllocation.role === role ? 'bg-primary/5 text-primary font-bold' : 'text-slate-600'}`}
+                                                                    onClick={() => {
+                                                                        setCurrentAllocation({ ...currentAllocation, role });
+                                                                        setShowAllocationRoleDropdown(false);
+                                                                    }}
+                                                                >
+                                                                    {role}
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </>
+                                                )}
+                                            </div>
                                         </div>
 
-                                        {showPointDropdown && (
-                                            <>
-                                                <div
-                                                    className="fixed inset-0 z-10"
-                                                    onClick={() => setShowPointDropdown(false)}
-                                                ></div>
-                                                <div
-                                                    ref={pointDropdown.ref}
-                                                    className={`absolute z-20 w-full bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-y-auto custom-scrollbar flex flex-col animate-in fade-in zoom-in-95 duration-100 ${pointDropdown.positionClass}`}
-                                                >
-                                                    {POINT_ROLES.map(role => (
-                                                        <div
-                                                            key={role}
-                                                            className={`px-4 py-3 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0 ${pointRole === role ? 'bg-primary/5 text-primary font-bold' : 'text-slate-600'}`}
-                                                            onClick={() => {
-                                                                setPointRole(role);
-                                                                setShowPointDropdown(false);
-                                                            }}
-                                                        >
-                                                            {role}
+                                        {/* Name & Phone */}
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <input
+                                                type="text"
+                                                placeholder="Person Name"
+                                                value={currentAllocation.name}
+                                                onChange={(e) => setCurrentAllocation({ ...currentAllocation, name: e.target.value })}
+                                                disabled={isExistingBeneficiary}
+                                                className={`block w-full px-3 py-2 border border-slate-200 rounded-lg focus:border-primary outline-none text-sm ${isExistingBeneficiary ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'bg-white'}`}
+                                            />
+                                            <input
+                                                type="text"
+                                                maxLength="4"
+                                                placeholder="Last 4 digits"
+                                                value={currentAllocation.phoneLast4}
+                                                onChange={(e) => {
+                                                    const val = e.target.value.replace(/\D/g, '');
+                                                    setCurrentAllocation({ ...currentAllocation, phoneLast4: val });
+                                                }}
+                                                disabled={isExistingBeneficiary}
+                                                className={`block w-full px-3 py-2 border border-slate-200 rounded-lg focus:border-primary outline-none text-sm ${isExistingBeneficiary ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'bg-white'}`}
+                                            />
+                                        </div>
+
+                                        {/* Points & Add Button */}
+                                        <div className="flex gap-3">
+                                            <input
+                                                type="number"
+                                                placeholder="Points"
+                                                min="1"
+                                                max={remainingPoints}
+                                                value={currentAllocation.points}
+                                                onChange={(e) => setCurrentAllocation({ ...currentAllocation, points: e.target.value })}
+                                                className="block w-full px-3 py-2 bg-white border border-slate-200 rounded-lg focus:border-primary outline-none text-sm"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={handleAddAllocation}
+                                                disabled={!currentAllocation.role || !currentAllocation.name || currentAllocation.phoneLast4.length !== 4 || !currentAllocation.points || parseInt(currentAllocation.points) > remainingPoints}
+                                                className="px-4 py-2 bg-slate-800 text-white rounded-lg text-xs font-bold uppercase tracking-wider hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                            >
+                                                Add
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Allocations List */}
+                                    <div className="flex-1 overflow-y-auto max-h-[200px] custom-scrollbar space-y-2">
+                                        {pointsAllocations.length === 0 ? (
+                                            <div className="text-center py-8 text-xs text-slate-400 border border-dashed border-slate-200 rounded-xl">
+                                                No points allocated yet.
+                                            </div>
+                                        ) : (
+                                            pointsAllocations.map(alloc => (
+                                                <div key={alloc.id} className="flex items-center justify-between p-3 bg-white border border-slate-100 rounded-lg hover:border-primary/20 hover:shadow-sm transition-all group">
+                                                    <div>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-xs font-bold text-slate-700">{alloc.name}</span>
+                                                            <span className="text-[10px] px-1.5 py-0.5 bg-slate-100 rounded text-slate-500 uppercase">{alloc.role}</span>
                                                         </div>
-                                                    ))}
+                                                        <div className="text-[10px] text-slate-400 mt-0.5">{alloc.role}-{alloc.phoneLast4}</div>
+                                                    </div>
+                                                    <div className="flex items-center gap-3">
+                                                        <span className="text-sm font-bold text-primary">{alloc.points} P</span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleRemoveAllocation(alloc.id)}
+                                                            className="text-slate-300 hover:text-red-500 transition-colors"
+                                                        >
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    </div>
                                                 </div>
-                                            </>
+                                            ))
                                         )}
                                     </div>
                                 </div>
                             </div>
+
 
                             {/* Payment & Logistics */}
                             <div className="bg-white rounded-2xl shadow-sm border border-slate-200/60 h-full">
@@ -1690,7 +1978,7 @@ const NewOrder = () => {
                     </div>
                 )}
             </div>
-        </div>
+        </div >
     );
 };
 

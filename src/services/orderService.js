@@ -18,13 +18,13 @@ export const PAYMENT_OPTIONS = [
 ];
 
 export const PRODUCTS = [
-    { name: 'K50 Floor & Wall Tile Adhesive', price: 600 },
-    { name: 'K60 Superior Floor & Wall Tile Adhesive', price: 800 },
-    { name: 'K80 Superior Tile & Stone Adhesive', price: 1000 },
-    { name: 'K90 Paramount Tile & Stone Adhesive', price: 1200 },
-    { name: 'Kamdhenu Infinity Stone & Tile Adhesive', price: 1500 },
-    { name: 'Tile Grout', price: 300 },
-    { name: 'Kamdhenu Infinia', price: 2000 }
+    { name: 'K50 Floor & Wall Tile Adhesive' },
+    { name: 'K60 Superior Floor & Wall Tile Adhesive' },
+    { name: 'K80 Superior Tile & Stone Adhesive' },
+    { name: 'K90 Paramount Tile & Stone Adhesive' },
+    { name: 'Kamdhenu Infinity Stone & Tile Adhesive' },
+    { name: 'Tile Grout' },
+    { name: 'Kamdhenu Infinia' }
 ];
 
 export const orderService = {
@@ -33,18 +33,31 @@ export const orderService = {
         return items.reduce((sum, item) => sum + ((item.quantity || 0) * (item.price || 0)), 0);
     },
 
+    // Calculate total points for order items
+    calculateOrderPoints: (items) => {
+        return items.reduce((sum, item) => sum + (item.points || 0), 0);
+    },
+
     // Prepare the order payload from form data
     prepareOrderPayload: (formData) => {
         const {
             orderDate, contractorName, customerType, customerPhone, items,
             notes, challanName, sitePoc, deliveryAddress,
             pointRole, paymentTerms, manualPaymentDays, logistics,
-            state, city, orderId, contractorId, siteId, nickname, mistryName
+            state, city, orderId, contractorId, siteId, nickname, mistryName,
+            pointsAllocations
         } = formData;
+
+        // If customer type is Mistry, use Mistry Name as the main name for the order record
+        // This ensures the Contractor remains listed as "Contractor" in future dropdowns,
+        // while the Mistry gets their own entry.
+        const finalContractorName = (customerType === 'Mistry' && mistryName)
+            ? mistryName
+            : contractorName;
 
         return {
             order_date: orderDate,
-            contractor_name: contractorName,
+            contractor_name: finalContractorName,
             customer_type: customerType,
             customer_phone: customerPhone,
             items: items,
@@ -63,7 +76,8 @@ export const orderService = {
             contractor_id: contractorId,
             site_id: siteId,
             nickname: nickname,
-            mistry_name: mistryName
+            mistry_name: mistryName,
+            points_allocations: pointsAllocations || []
         };
     },
 
@@ -79,8 +93,8 @@ export const orderService = {
             // Validate user has necessary fields
             if (!user.user_id) throw new Error('User ID not found in session');
 
-            // Separate items from order details
-            const { items, ...orderDetails } = orderData;
+            // Separate items and allocations from order details
+            const { items, points_allocations, ...orderDetails } = orderData;
 
             // Prepare order payload
             const payload = {
@@ -142,8 +156,34 @@ export const orderService = {
                 if (productsError) {
                     // Delete the created order if product insertion fails to maintain consistency
                     console.error('Error creating products, rolling back order:', productsError);
-                    await supabase.from('orders').delete().eq('order_id', order.order_id); // Renamed from id
+                    await supabase.from('orders').delete().eq('order_id', order.order_id);
                     throw productsError;
+                }
+            }
+
+            // 3. Insert Points Allocations (if any)
+            if (points_allocations && points_allocations.length > 0) {
+                const allocationsPayload = points_allocations.map(alloc => ({
+                    order_id: order.order_id,
+                    person_name: alloc.name,
+                    role: alloc.role,
+                    phone_last_4: alloc.phoneLast4,
+                    allocated_points: parseInt(alloc.points)
+                }));
+
+                const { error: allocationsError } = await supabase
+                    .from('points_allocation')
+                    .insert(allocationsPayload);
+
+                if (allocationsError) {
+                    console.error('Error creating points allocations:', allocationsError);
+                    // Decide if we rollback entirely or just warn.
+                    // Requirement says order cannot be saved without allocation if needed.
+                    // So we probably should rollback or at least throw.
+                    // For now, let's rollback to be safe.
+                    await supabase.from('products').delete().eq('order_id', order.order_id);
+                    await supabase.from('orders').delete().eq('order_id', order.order_id);
+                    throw allocationsError;
                 }
             }
 
@@ -229,6 +269,35 @@ export const orderService = {
             return { data: uniqueContractors, error: null };
         } catch (error) {
             console.error('Error fetching contractors:', error);
+            return { data: [], error };
+        }
+    },
+
+    // Get unique points beneficiaries
+    getUniqueBeneficiaries: async () => {
+        try {
+            const { data, error } = await supabase
+                .from('points_allocation')
+                .select('person_name, role, phone_last_4')
+                .order('created_at', { ascending: false });
+
+            if (error) throw error;
+
+            // Deduplicate
+            const seen = new Set();
+            const uniqueBeneficiaries = [];
+
+            for (const item of data) {
+                if (!item.person_name || !item.role) continue;
+                const key = `${item.role.toLowerCase()}-${item.person_name.toLowerCase()}-${item.phone_last_4}`;
+                if (!seen.has(key)) {
+                    seen.add(key);
+                    uniqueBeneficiaries.push(item);
+                }
+            }
+            return { data: uniqueBeneficiaries, error: null };
+        } catch (error) {
+            console.error('Error fetching beneficiaries:', error);
             return { data: [], error };
         }
     },
