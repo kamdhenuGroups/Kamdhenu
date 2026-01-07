@@ -209,7 +209,7 @@ export const orderService = {
         try {
             const { data, error } = await supabase
                 .from('orders')
-                .select('contractor_name, customer_phone, customer_type, nickname, mistry_name, contractor_id, site_contact_number, delivery_address, point_of_contact_role, payment_terms, manual_payment_days, logistics_mode, state, city')
+                .select('contractor_name, customer_phone, customer_type, nickname, mistry_name, contractor_id, site_contact_number, delivery_address, point_of_contact_role, payment_terms, manual_payment_days, logistics_mode, state, city, challan_reference')
                 .order('created_at', { ascending: false });
 
             if (error) throw error;
@@ -395,16 +395,21 @@ export const idGenerator = {
         else if (customerType === 'Distributor') typePrefix = 'D';
 
         // Normalize text to Uppercase for consistency and uniqueness checks
-        const normContractorName = contractorName.toUpperCase();
+        let normContractorName = contractorName.toUpperCase();
         const normNickname = nickname ? nickname.toUpperCase() : '';
         const normMistryName = mistryName ? mistryName.toUpperCase() : '';
 
-        const nameDisplay = (customerType === 'Contractor' && normNickname)
+        // Remove spaces for Contractor type
+        if (customerType === 'Contractor') {
+            normContractorName = normContractorName.replace(/\s+/g, '');
+        }
+
+        const nameDisplay = ((customerType === 'Contractor' || customerType === 'Mistry') && normNickname)
             ? `${normContractorName}(${normNickname})`
             : normContractorName;
 
         if (customerType === 'Mistry') {
-            return `Mi/${phoneLast5}/${cityCode}/${nameDisplay}-${normMistryName || ''}`;
+            return `MI/${phoneLast5}/${cityCode}/${nameDisplay}-${normMistryName || ''}`;
         }
 
         return `${typePrefix}/${phoneLast5}/${cityCode}/${nameDisplay}`;

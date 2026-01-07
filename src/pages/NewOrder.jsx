@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
-    ShoppingCart,
+
     Calendar,
     User,
     Package,
@@ -13,7 +13,7 @@ import {
     Truck,
     CreditCard,
     Award,
-    Eye,
+
     Clock,
     CheckCircle,
     ShoppingBag,
@@ -21,21 +21,48 @@ import {
     Search,
     Map,
     Trash2,
-    Plus
+    Plus,
+    Filter
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { INDIAN_LOCATIONS } from '../data/indianLocations';
 import { orderService, CUSTOMER_TYPES, idGenerator, POINT_ROLES, PAYMENT_OPTIONS, PRODUCTS } from '../services/orderService';
 
+const useDropdownPosition = (isOpen) => {
+    const ref = useRef(null);
+    const [positionClass, setPositionClass] = useState("mt-1");
+
+    React.useLayoutEffect(() => {
+        if (isOpen && ref.current) {
+            const rect = ref.current.getBoundingClientRect();
+            const viewportHeight = window.innerHeight;
+
+            // Check overflow
+            if (rect.bottom > viewportHeight) {
+                // Flip to top
+                setPositionClass("mb-1 bottom-full origin-bottom");
+            } else {
+                setPositionClass("mt-1 origin-top");
+            }
+        } else if (!isOpen) {
+            // Reset when closed
+            setPositionClass("mt-1");
+        }
+    }, [isOpen]);
+
+    return { ref, positionClass };
+};
+
 const NewOrder = () => {
     const [loading, setLoading] = useState(false);
+    const dateInputRef = useRef(null);
 
     // Form State
     const [orderDate, setOrderDate] = useState(new Date().toISOString().split('T')[0]);
     const [contractorName, setContractorName] = useState('');
     const [customerPhone, setCustomerPhone] = useState('');
     const [customerType, setCustomerType] = useState('');
-    const [items, setItems] = useState([{ id: 1, product: '', quantity: 1, price: 0, points: 0 }]);
+    const [items, setItems] = useState([{ id: 1, product: '', quantity: 1, price: 0, points: 0, showDropdown: false }]);
     const [notes, setNotes] = useState('');
 
     // Tab State
@@ -64,17 +91,7 @@ const NewOrder = () => {
         setLoading(false);
     };
 
-    const handleDeleteOrder = async (id) => {
-        if (!window.confirm('Are you sure you want to delete this order?')) return;
 
-        const { error } = await orderService.deleteOrder(id);
-        if (error) {
-            toast.error('Failed to delete order');
-        } else {
-            toast.success('Order deleted successfully');
-            fetchOrders();
-        }
-    };
 
     // New Fields State
     const [challanName, setChallanName] = useState('');
@@ -92,6 +109,11 @@ const NewOrder = () => {
     const [citySearch, setCitySearch] = useState('');
     const [showCityDropdown, setShowCityDropdown] = useState(false);
 
+    // Dropdown States for new custom UI fields
+    const [showPointDropdown, setShowPointDropdown] = useState(false);
+    const [showLogisticsDropdown, setShowLogisticsDropdown] = useState(false);
+    const [showPaymentDropdown, setShowPaymentDropdown] = useState(false);
+
     // ID Generation State
     const [nickname, setNickname] = useState('');
     const [cityCode, setCityCode] = useState('');
@@ -107,6 +129,23 @@ const NewOrder = () => {
     // Address Search State
     const [availableAddresses, setAvailableAddresses] = useState([]);
     const [showAddressDropdown, setShowAddressDropdown] = useState(false);
+
+    // History Filter State
+    const [historySelectedState, setHistorySelectedState] = useState('');
+    const [historyStateSearch, setHistoryStateSearch] = useState('');
+    const [showHistoryStateDropdown, setShowHistoryStateDropdown] = useState(false);
+
+    // Dropdown Positioning Hooks
+    const contractorDropdown = useDropdownPosition(showContractorDropdown);
+    const stateDropdown = useDropdownPosition(showStateDropdown);
+    const cityDropdown = useDropdownPosition(showCityDropdown);
+    const addressDropdown = useDropdownPosition(showAddressDropdown);
+    const historyStateDropdown = useDropdownPosition(showHistoryStateDropdown);
+
+    // New Dropdown Position Hooks
+    const pointDropdown = useDropdownPosition(showPointDropdown);
+    const logisticsDropdown = useDropdownPosition(showLogisticsDropdown);
+    const paymentDropdown = useDropdownPosition(showPaymentDropdown);
 
     // Fetch contractors on mount
     React.useEffect(() => {
@@ -192,15 +231,22 @@ const NewOrder = () => {
         return idGenerator.generateOrderId(getGeneratedSiteId(), orderNumber);
     };
 
-    // Reset fields when customer type changes
-    React.useEffect(() => {
-        setNickname('');
-        setMistryName('');
-    }, [customerType]);
+
 
     const states = Object.keys(INDIAN_LOCATIONS);
     const filteredStates = states.filter(state =>
         state.toLowerCase().includes(stateSearch.toLowerCase())
+    );
+
+    const historyFilteredStates = React.useMemo(() => {
+        const availableStates = new Set(orderHistory.map(o => o.state).filter(Boolean));
+        return Array.from(availableStates).sort().filter(state =>
+            state.toLowerCase().includes(historyStateSearch.toLowerCase())
+        );
+    }, [orderHistory, historyStateSearch]);
+
+    const filteredOrderHistory = orderHistory.filter(order =>
+        !historySelectedState || order.state === historySelectedState || (historySelectedState === 'No State' && !order.state)
     );
 
     const cities = selectedState ? INDIAN_LOCATIONS[selectedState] || [] : [];
@@ -211,7 +257,7 @@ const NewOrder = () => {
 
 
     const handleAddItem = () => {
-        setItems([...items, { id: Date.now(), product: '', quantity: 1, price: 0, points: 0 }]);
+        setItems([...items, { id: Date.now(), product: '', quantity: 1, price: 0, points: 0, showDropdown: false }]);
     };
 
     const handleRemoveItem = (id) => {
@@ -223,6 +269,13 @@ const NewOrder = () => {
         setItems(items.map(item =>
             item.id === id ? { ...item, [field]: value } : item
         ));
+    };
+
+    const toggleItemDropdown = (id) => {
+        setItems(items.map(item => ({
+            ...item,
+            showDropdown: item.id === id ? !item.showDropdown : false
+        })));
     };
 
 
@@ -305,18 +358,24 @@ const NewOrder = () => {
         }
     };
 
+    const existingContractor = React.useMemo(() => {
+        if (!contractorName) return null;
+        return availableContractors.find(c =>
+            c.contractor_name?.toLowerCase() === contractorName.toLowerCase()
+        );
+    }, [contractorName, availableContractors]);
+
+    // Auto-fill nickname if exact match found
+    React.useEffect(() => {
+        if (existingContractor && existingContractor.nickname) {
+            setNickname(existingContractor.nickname);
+        }
+    }, [existingContractor]);
+
     return (
         <div className="h-full flex flex-col gap-6 overflow-hidden">
-            {/* Header */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 shrink-0">
-                <div>
-                    <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 flex items-center gap-3">
-                        <ShoppingCart className="text-primary" size={28} />
-                        Order Management
-                    </h1>
-                    <p className="text-slate-500 mt-1 text-sm">Create and manage contractor orders.</p>
-                </div>
-            </div>
+
+
 
             {/* Tab Navigation */}
             <div className="flex bg-slate-100 p-1 rounded-xl w-fit shrink-0">
@@ -345,7 +404,7 @@ const NewOrder = () => {
             {/* Main Content */}
             <div className="flex-1 overflow-y-auto custom-scrollbar">
                 {activeTab === 'new' ? (
-                    <form onSubmit={handleSubmit} className="max-w-5xl mx-auto space-y-6 pb-10">
+                    <form onSubmit={handleSubmit} className="max-w-6xl mx-auto space-y-6 pb-10">
                         {/* Generated IDs Banner */}
                         {((currentUser && getGeneratedOrderId()) || getGeneratedCustomerId() || (currentUser && getGeneratedSiteId())) && (
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 animate-in fade-in slide-in-from-top-4 duration-500">
@@ -390,14 +449,19 @@ const NewOrder = () => {
                                     </div>
                                     Order Details
                                 </h2>
-                                <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm group hover:border-primary/30 transition-colors">
+                                <div className="relative flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm group hover:border-primary/30 transition-colors">
                                     <Calendar size={14} className="text-slate-400 group-hover:text-primary transition-colors" />
+                                    <span className="text-sm font-medium text-slate-700 min-w-[80px]">
+                                        {orderDate ? orderDate.split('-').reverse().join('/') : 'DD/MM/YYYY'}
+                                    </span>
                                     <input
+                                        ref={dateInputRef}
                                         type="date"
                                         value={orderDate}
                                         onChange={(e) => setOrderDate(e.target.value)}
+                                        onClick={() => dateInputRef.current?.showPicker()}
                                         required
-                                        className="text-sm font-medium text-slate-700 bg-transparent border-none focus:ring-0 p-0 outline-none cursor-pointer"
+                                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                                     />
                                 </div>
                             </div>
@@ -464,7 +528,10 @@ const NewOrder = () => {
                                                             className="fixed inset-0 z-10"
                                                             onClick={() => setShowContractorDropdown(false)}
                                                         ></div>
-                                                        <div className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-y-auto custom-scrollbar flex flex-col animate-in fade-in zoom-in-95 duration-100">
+                                                        <div
+                                                            ref={contractorDropdown.ref}
+                                                            className={`absolute z-20 w-full bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-y-auto custom-scrollbar flex flex-col animate-in fade-in zoom-in-95 duration-100 ${contractorDropdown.positionClass}`}
+                                                        >
                                                             {availableContractors
                                                                 .filter(c => c.contractor_name.toLowerCase().includes(contractorName.toLowerCase()))
                                                                 .map((contractor, idx) => (
@@ -487,6 +554,7 @@ const NewOrder = () => {
                                                                             if (contractor.logistics_mode) setLogistics(contractor.logistics_mode);
                                                                             if (contractor.state) setSelectedState(contractor.state);
                                                                             if (contractor.city) setSelectedCity(contractor.city);
+                                                                            if (contractor.challan_reference) setChallanName(contractor.challan_reference);
 
                                                                             setShowContractorDropdown(false);
                                                                         }}
@@ -548,8 +616,9 @@ const NewOrder = () => {
                                             </div>
                                         </div>
 
-                                        {/* Nickname (Only for Contractor) */}
-                                        {customerType === 'Contractor' && (
+                                        {/* Nickname (Only for Contractor and Mistry) */}
+                                        {/* Nickname (Only for Contractor and Mistry) - Hidden if existing contractor found (cannot add nickname to existing) */}
+                                        {(customerType === 'Contractor' || customerType === 'Mistry') && !existingContractor && (
                                             <div className="animate-in fade-in slide-in-from-top-2">
                                                 <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
                                                     Nickname <span className="text-slate-400 font-normal normal-case tracking-normal">(Market Name)</span>
@@ -617,7 +686,10 @@ const NewOrder = () => {
                                                                 className="fixed inset-0 z-10"
                                                                 onClick={() => setShowStateDropdown(false)}
                                                             ></div>
-                                                            <div className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-100 min-w-[200px]">
+                                                            <div
+                                                                ref={stateDropdown.ref}
+                                                                className={`absolute z-20 w-full bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-100 min-w-[200px] ${stateDropdown.positionClass}`}
+                                                            >
                                                                 {/* Search Bar */}
                                                                 <div className="p-2 border-b border-slate-100 bg-slate-50 sticky top-0">
                                                                     <div className="relative">
@@ -688,7 +760,10 @@ const NewOrder = () => {
                                                                 className="fixed inset-0 z-10"
                                                                 onClick={() => setShowCityDropdown(false)}
                                                             ></div>
-                                                            <div className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-100 min-w-[200px]">
+                                                            <div
+                                                                ref={cityDropdown.ref}
+                                                                className={`absolute z-20 w-full bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-100 min-w-[200px] ${cityDropdown.positionClass}`}
+                                                            >
                                                                 {/* Search Bar */}
                                                                 <div className="p-2 border-b border-slate-100 bg-slate-50 sticky top-0">
                                                                     <div className="relative">
@@ -760,7 +835,10 @@ const NewOrder = () => {
                                                             className="fixed inset-0 z-10"
                                                             onClick={() => setShowAddressDropdown(false)}
                                                         ></div>
-                                                        <div className="absolute z-20 mt-1 w-full bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-y-auto custom-scrollbar flex flex-col animate-in fade-in zoom-in-95 duration-100">
+                                                        <div
+                                                            ref={addressDropdown.ref}
+                                                            className={`absolute z-20 w-full bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-y-auto custom-scrollbar flex flex-col animate-in fade-in zoom-in-95 duration-100 ${addressDropdown.positionClass}`}
+                                                        >
                                                             {availableAddresses
                                                                 .filter(addr => addr.toLowerCase().includes(deliveryAddress.toLowerCase()))
                                                                 .map((addr, idx) => (
@@ -823,7 +901,7 @@ const NewOrder = () => {
                         </div>
 
                         {/* Order Items Card */}
-                        <div className="bg-white rounded-2xl shadow-sm border border-slate-200/60 overflow-hidden">
+                        <div className="bg-white rounded-2xl shadow-sm border border-slate-200/60">
                             <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between gap-4">
                                 <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
                                     <div className="bg-white p-1.5 rounded-lg border border-slate-200 shadow-sm text-primary">
@@ -860,29 +938,46 @@ const NewOrder = () => {
                                             <div className="col-span-12 sm:col-span-5">
                                                 <label className="block text-xs font-semibold text-slate-500 mb-1 sm:hidden uppercase">Product</label>
                                                 <div className="relative">
-                                                    <select
-                                                        value={item.product}
-                                                        onChange={(e) => {
-                                                            const selectedProduct = PRODUCTS.find(p => p.name === e.target.value);
-                                                            setItems(items.map(i =>
-                                                                i.id === item.id
-                                                                    ? { ...i, product: e.target.value, price: selectedProduct ? selectedProduct.price : 0 }
-                                                                    : i
-                                                            ));
-                                                        }}
-                                                        className="w-full pl-3 pr-10 py-2.5 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none text-sm font-medium appearance-none truncate transition-all"
-                                                        required
+                                                    <div
+                                                        onClick={() => toggleItemDropdown(item.id)}
+                                                        className="w-full pl-3 pr-10 py-2.5 bg-white border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50 flex items-center justify-between transition-all"
                                                     >
-                                                        <option value="">Select Product...</option>
-                                                        {PRODUCTS.map((p, idx) => (
-                                                            <option key={idx} value={p.name}>
-                                                                {p.name}
-                                                            </option>
-                                                        ))}
-                                                    </select>
-                                                    <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none text-slate-400">
-                                                        <ChevronDown size={14} />
+                                                        <span className={`text-sm font-medium ${item.product ? 'text-slate-800' : 'text-slate-400'}`}>
+                                                            {item.product || 'Select Product...'}
+                                                        </span>
+                                                        <ChevronDown size={14} className="text-slate-400" />
                                                     </div>
+
+                                                    {item.showDropdown && (
+                                                        <>
+                                                            <div
+                                                                className="fixed inset-0 z-10"
+                                                                onClick={() => toggleItemDropdown(item.id)}
+                                                            ></div>
+                                                            <div className="absolute z-20 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-y-auto custom-scrollbar flex flex-col animate-in fade-in zoom-in-95 duration-100 min-w-[200px]">
+                                                                {PRODUCTS.map((p, idx) => (
+                                                                    <div
+                                                                        key={idx}
+                                                                        className="px-4 py-3 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0"
+                                                                        onClick={() => {
+                                                                            const selectedProduct = PRODUCTS.find(prod => prod.name === p.name);
+                                                                            setItems(items.map(i =>
+                                                                                i.id === item.id
+                                                                                    ? { ...i, product: p.name, price: selectedProduct ? selectedProduct.price : 0, showDropdown: false }
+                                                                                    : i
+                                                                            ));
+                                                                        }}
+                                                                    >
+                                                                        <div className="flex justify-between items-center">
+                                                                            <span className={`text-sm font-medium ${item.product === p.name ? 'text-primary uppercase font-bold' : 'text-slate-700'}`}>
+                                                                                {p.name}
+                                                                            </span>
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </>
+                                                    )}
                                                 </div>
                                             </div>
 
@@ -961,7 +1056,7 @@ const NewOrder = () => {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
                             {/* Points Allocation */}
-                            <div className="bg-white rounded-2xl shadow-sm border border-slate-200/60 overflow-hidden h-full">
+                            <div className="bg-white rounded-2xl shadow-sm border border-slate-200/60 h-full">
                                 <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center gap-3">
                                     <div className="bg-white p-1.5 rounded-lg border border-slate-200 shadow-sm text-primary">
                                         <Award size={18} />
@@ -971,25 +1066,47 @@ const NewOrder = () => {
                                 <div className="p-6">
                                     <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Points Beneficiary</label>
                                     <div className="relative">
-                                        <select
-                                            value={pointRole}
-                                            onChange={(e) => setPointRole(e.target.value)}
-                                            className="block w-full pl-4 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none text-sm font-medium appearance-none"
+                                        <div
+                                            onClick={() => setShowPointDropdown(!showPointDropdown)}
+                                            className="block w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer hover:bg-white focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary transition-all text-sm font-medium flex items-center justify-between"
                                         >
-                                            <option value="">Select Role</option>
-                                            {POINT_ROLES.map(role => (
-                                                <option key={role} value={role}>{role}</option>
-                                            ))}
-                                        </select>
-                                        <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-slate-400">
-                                            <ChevronDown size={16} />
+                                            <span className={pointRole ? "text-slate-800" : "text-slate-400"}>
+                                                {pointRole || "Select Role"}
+                                            </span>
+                                            <ChevronDown size={16} className={`text-slate-400 transition-transform ${showPointDropdown ? 'rotate-180' : ''}`} />
                                         </div>
+
+                                        {showPointDropdown && (
+                                            <>
+                                                <div
+                                                    className="fixed inset-0 z-10"
+                                                    onClick={() => setShowPointDropdown(false)}
+                                                ></div>
+                                                <div
+                                                    ref={pointDropdown.ref}
+                                                    className={`absolute z-20 w-full bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-y-auto custom-scrollbar flex flex-col animate-in fade-in zoom-in-95 duration-100 ${pointDropdown.positionClass}`}
+                                                >
+                                                    {POINT_ROLES.map(role => (
+                                                        <div
+                                                            key={role}
+                                                            className={`px-4 py-3 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0 ${pointRole === role ? 'bg-primary/5 text-primary font-bold' : 'text-slate-600'}`}
+                                                            onClick={() => {
+                                                                setPointRole(role);
+                                                                setShowPointDropdown(false);
+                                                            }}
+                                                        >
+                                                            {role}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </>
+                                        )}
                                     </div>
                                 </div>
                             </div>
 
                             {/* Payment & Logistics */}
-                            <div className="bg-white rounded-2xl shadow-sm border border-slate-200/60 overflow-hidden h-full">
+                            <div className="bg-white rounded-2xl shadow-sm border border-slate-200/60 h-full">
                                 <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center gap-3">
                                     <div className="bg-white p-1.5 rounded-lg border border-slate-200 shadow-sm text-primary">
                                         <CreditCard size={18} />
@@ -1002,21 +1119,44 @@ const NewOrder = () => {
                                     <div>
                                         <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Logistics Mode</label>
                                         <div className="relative">
-                                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                                <Truck size={18} className="text-slate-400" />
-                                            </div>
-                                            <select
-                                                value={logistics}
-                                                onChange={(e) => setLogistics(e.target.value)}
-                                                className="block w-full pl-10 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none text-sm font-medium appearance-none"
+                                            <div
+                                                onClick={() => setShowLogisticsDropdown(!showLogisticsDropdown)}
+                                                className="block w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer hover:bg-white focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary transition-all text-sm font-medium flex items-center justify-between relative"
                                             >
-                                                <option value="">Select Logistics Option</option>
-                                                <option value="Paid by Customer">Paid by Customer</option>
-                                                <option value="Paid by Company">Paid by Company</option>
-                                            </select>
-                                            <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-slate-400">
-                                                <ChevronDown size={16} />
+                                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                                    <Truck size={18} className="text-slate-400" />
+                                                </div>
+                                                <span className={logistics ? "text-slate-800" : "text-slate-400"}>
+                                                    {logistics || "Select Logistics Option"}
+                                                </span>
+                                                <ChevronDown size={16} className={`text-slate-400 transition-transform ${showLogisticsDropdown ? 'rotate-180' : ''}`} />
                                             </div>
+
+                                            {showLogisticsDropdown && (
+                                                <>
+                                                    <div
+                                                        className="fixed inset-0 z-10"
+                                                        onClick={() => setShowLogisticsDropdown(false)}
+                                                    ></div>
+                                                    <div
+                                                        ref={logisticsDropdown.ref}
+                                                        className={`absolute z-20 w-full bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-y-auto custom-scrollbar flex flex-col animate-in fade-in zoom-in-95 duration-100 ${logisticsDropdown.positionClass}`}
+                                                    >
+                                                        {['Paid by Customer', 'Paid by Company'].map(opt => (
+                                                            <div
+                                                                key={opt}
+                                                                className={`px-4 py-3 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0 ${logistics === opt ? 'bg-primary/5 text-primary font-bold' : 'text-slate-600'}`}
+                                                                onClick={() => {
+                                                                    setLogistics(opt);
+                                                                    setShowLogisticsDropdown(false);
+                                                                }}
+                                                            >
+                                                                {opt}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </>
+                                            )}
                                         </div>
                                     </div>
 
@@ -1024,22 +1164,44 @@ const NewOrder = () => {
                                     <div>
                                         <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Payment Terms</label>
                                         <div className="relative">
-                                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                                <CreditCard size={18} className="text-slate-400" />
-                                            </div>
-                                            <select
-                                                value={paymentTerms}
-                                                onChange={(e) => setPaymentTerms(e.target.value)}
-                                                className="block w-full pl-10 pr-10 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none text-sm font-medium appearance-none"
+                                            <div
+                                                onClick={() => setShowPaymentDropdown(!showPaymentDropdown)}
+                                                className="block w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer hover:bg-white focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary transition-all text-sm font-medium flex items-center justify-between relative"
                                             >
-                                                <option value="">Select Payment Terms</option>
-                                                {PAYMENT_OPTIONS.map(option => (
-                                                    <option key={option} value={option}>{option}</option>
-                                                ))}
-                                            </select>
-                                            <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-slate-400">
-                                                <ChevronDown size={16} />
+                                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                                    <CreditCard size={18} className="text-slate-400" />
+                                                </div>
+                                                <span className={paymentTerms ? "text-slate-800" : "text-slate-400"}>
+                                                    {paymentTerms || "Select Payment Terms"}
+                                                </span>
+                                                <ChevronDown size={16} className={`text-slate-400 transition-transform ${showPaymentDropdown ? 'rotate-180' : ''}`} />
                                             </div>
+
+                                            {showPaymentDropdown && (
+                                                <>
+                                                    <div
+                                                        className="fixed inset-0 z-10"
+                                                        onClick={() => setShowPaymentDropdown(false)}
+                                                    ></div>
+                                                    <div
+                                                        ref={paymentDropdown.ref}
+                                                        className={`absolute z-20 w-full bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-y-auto custom-scrollbar flex flex-col animate-in fade-in zoom-in-95 duration-100 ${paymentDropdown.positionClass}`}
+                                                    >
+                                                        {PAYMENT_OPTIONS.map(option => (
+                                                            <div
+                                                                key={option}
+                                                                className={`px-4 py-3 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0 ${paymentTerms === option ? 'bg-primary/5 text-primary font-bold' : 'text-slate-600'}`}
+                                                                onClick={() => {
+                                                                    setPaymentTerms(option);
+                                                                    setShowPaymentDropdown(false);
+                                                                }}
+                                                            >
+                                                                {option}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </>
+                                            )}
                                         </div>
                                     </div>
 
@@ -1109,7 +1271,100 @@ const NewOrder = () => {
 
                     </form>
                 ) : (
-                    <div className="max-w-6xl mx-auto pb-10">
+                    <div className="max-w-6xl mx-auto pb-10 space-y-4">
+                        {/* Filters */}
+                        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex items-center gap-4">
+                            <div className="flex items-center gap-2 text-slate-500 text-sm font-medium">
+                                <Filter size={16} />
+                                <span className="uppercase text-xs font-bold tracking-wider">Filters:</span>
+                            </div>
+
+                            <div className="relative w-64">
+                                <div
+                                    onClick={() => setShowHistoryStateDropdown(!showHistoryStateDropdown)}
+                                    className="block w-full px-4 py-2 border border-slate-200 rounded-lg bg-slate-50 transition-all text-sm font-medium flex items-center justify-between cursor-pointer hover:bg-white focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary"
+                                >
+                                    <span className={historySelectedState ? "text-slate-800" : "text-slate-400"}>
+                                        {historySelectedState || "All States"}
+                                    </span>
+                                    <div className="flex items-center gap-2">
+                                        {historySelectedState && (
+                                            <div
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setHistorySelectedState('');
+                                                }}
+                                                className="p-0.5 hover:bg-slate-200 rounded-full transition-colors"
+                                            >
+                                                <X size={14} className="text-slate-400 hover:text-red-500" />
+                                            </div>
+                                        )}
+                                        <ChevronDown size={14} className={`text-slate-400 transition-transform ${showHistoryStateDropdown ? 'rotate-180' : ''}`} />
+                                    </div>
+                                </div>
+
+                                {/* Dropdown */}
+                                {showHistoryStateDropdown && (
+                                    <>
+                                        <div
+                                            className="fixed inset-0 z-10"
+                                            onClick={() => setShowHistoryStateDropdown(false)}
+                                        ></div>
+                                        <div
+                                            ref={historyStateDropdown.ref}
+                                            className={`absolute z-20 w-full bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-100 ${historyStateDropdown.positionClass}`}
+                                        >
+                                            <div className="p-2 border-b border-slate-100 bg-slate-50 sticky top-0">
+                                                <div className="relative">
+                                                    <Search size={14} className="absolute left-2.5 top-2.5 text-slate-400" />
+                                                    <input
+                                                        type="text"
+                                                        value={historyStateSearch}
+                                                        onChange={(e) => setHistoryStateSearch(e.target.value)}
+                                                        placeholder="Search State..."
+                                                        className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-md focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+                                                        autoFocus
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div className="overflow-y-auto flex-1 p-1 custom-scrollbar">
+                                                <div
+                                                    className={`px-3 py-2 rounded-md cursor-pointer text-sm transition-colors ${!historySelectedState ? 'bg-primary/5 text-primary font-bold' : 'text-slate-600 hover:bg-slate-50'}`}
+                                                    onClick={() => {
+                                                        setHistorySelectedState('');
+                                                        setShowHistoryStateDropdown(false);
+                                                    }}
+                                                >
+                                                    All States
+                                                </div>
+                                                {historyFilteredStates.map(state => (
+                                                    <div
+                                                        key={state}
+                                                        className={`px-3 py-2 rounded-md cursor-pointer text-sm transition-colors ${historySelectedState === state
+                                                            ? 'bg-primary/5 text-primary font-bold'
+                                                            : 'text-slate-600 hover:bg-slate-50'
+                                                            }`}
+                                                        onClick={() => {
+                                                            setHistorySelectedState(state);
+                                                            setHistoryStateSearch('');
+                                                            setShowHistoryStateDropdown(false);
+                                                        }}
+                                                    >
+                                                        {state}
+                                                    </div>
+                                                ))}
+                                                {historyFilteredStates.length === 0 && (
+                                                    <div className="px-3 py-4 text-center text-xs text-slate-400">
+                                                        No state found
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+
                         <div className="bg-white rounded-2xl shadow-sm border border-slate-200/60 overflow-hidden">
                             <div className="overflow-x-auto">
                                 <table className="w-full text-left text-sm">
@@ -1118,27 +1373,33 @@ const NewOrder = () => {
                                             <th className="px-6 py-4 font-semibold text-slate-700 whitespace-nowrap">Order ID</th>
                                             <th className="px-6 py-4 font-semibold text-slate-700 whitespace-nowrap">Date</th>
                                             <th className="px-6 py-4 font-semibold text-slate-700 whitespace-nowrap">Contractor</th>
+                                            <th className="px-6 py-4 font-semibold text-slate-700 whitespace-nowrap">City</th>
                                             <th className="px-6 py-4 font-semibold text-slate-700 whitespace-nowrap">Contact</th>
                                             <th className="px-6 py-4 font-semibold text-slate-700 text-right whitespace-nowrap">Items</th>
                                             <th className="px-6 py-4 font-semibold text-slate-700 text-right whitespace-nowrap">Amount</th>
                                             <th className="px-6 py-4 font-semibold text-slate-700 text-center whitespace-nowrap">Status</th>
-                                            <th className="px-6 py-4 font-semibold text-slate-700 text-center whitespace-nowrap">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
-                                        {orderHistory.map((order) => (
+                                        {filteredOrderHistory.map((order) => (
                                             <tr key={order.order_id} className="hover:bg-slate-50/50 transition-colors">
-                                                <td className="px-6 py-4 font-bold text-primary cursor-pointer hover:underline whitespace-nowrap">
+                                                <td
+                                                    onClick={() => setSelectedOrder(order)}
+                                                    className="px-6 py-4 font-bold text-primary cursor-pointer hover:underline whitespace-nowrap"
+                                                >
                                                     {order.order_id}
                                                 </td>
                                                 <td className="px-6 py-4 text-slate-600 whitespace-nowrap">
                                                     <div className="flex items-center gap-2">
                                                         <Calendar size={14} className="text-slate-400" />
-                                                        {new Date(order.order_date).toLocaleDateString()}
+                                                        {new Date(order.order_date).toLocaleDateString('en-GB')}
                                                     </div>
                                                 </td>
                                                 <td className="px-6 py-4 text-slate-800 font-medium whitespace-nowrap">
                                                     {order.contractor_name}
+                                                </td>
+                                                <td className="px-6 py-4 text-slate-600 text-xs whitespace-nowrap font-medium">
+                                                    {order.city || '-'}
                                                 </td>
                                                 <td className="px-6 py-4 text-slate-600 font-bold text-xs whitespace-nowrap">
                                                     {order.site_contact_number || 'N/A'}
@@ -1159,32 +1420,16 @@ const NewOrder = () => {
                                                         {order.order_status}
                                                     </span>
                                                 </td>
-                                                <td className="px-6 py-4 text-center whitespace-nowrap">
-                                                    <div className="flex items-center justify-center gap-2">
-                                                        <button
-                                                            onClick={() => setSelectedOrder(order)}
-                                                            className="text-slate-400 hover:text-primary transition-colors p-1"
-                                                        >
-                                                            <Eye size={18} />
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleDeleteOrder(order.order_id)}
-                                                            className="text-slate-400 hover:text-red-500 transition-colors p-1"
-                                                        >
-                                                            <Trash2 size={18} />
-                                                        </button>
-                                                    </div>
-                                                </td>
                                             </tr>
                                         ))}
-                                        {orderHistory.length === 0 && (
+                                        {filteredOrderHistory.length === 0 && (
                                             <tr>
-                                                <td colSpan="8" className="px-6 py-12 text-center text-slate-500">
+                                                <td colSpan="9" className="px-6 py-12 text-center text-slate-500">
                                                     <div className="flex flex-col items-center gap-2">
                                                         <div className="bg-slate-50 p-3 rounded-full">
                                                             <ShoppingBag size={24} className="text-slate-400" />
                                                         </div>
-                                                        <p>No orders found yet</p>
+                                                        <p>No orders found {historySelectedState ? `for ${historySelectedState}` : ''}</p>
                                                     </div>
                                                 </td>
                                             </tr>
@@ -1219,7 +1464,7 @@ const NewOrder = () => {
                                         </div>
                                         <div>
                                             <p className="text-sm font-bold text-slate-800">
-                                                {new Date(selectedOrder.order_date).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
+                                                {new Date(selectedOrder.order_date).toLocaleDateString('en-GB')}
                                             </p>
                                             <p className="text-xs text-slate-500">
                                                 {new Date(selectedOrder.order_date).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
