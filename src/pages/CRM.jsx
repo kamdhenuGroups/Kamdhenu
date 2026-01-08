@@ -21,6 +21,7 @@ import {
 import { orderService } from '../services/orderService';
 import { format } from 'date-fns';
 import toast, { Toaster } from 'react-hot-toast';
+import PaymentDetailsCard from '../components/PaymentDetailsCard';
 
 const STATUS_COLORS = {
     'Pending': 'bg-amber-100 text-amber-800 border-amber-200',
@@ -451,6 +452,12 @@ const CRM = () => {
                                         </tbody>
                                     </table>
                                 </div>
+
+                                {/* Payment Details Component */}
+                                <PaymentDetailsCard
+                                    order={selectedOrder}
+                                    payment={Array.isArray(selectedOrder.payments) ? selectedOrder.payments[0] : (selectedOrder.payments || {})}
+                                />
 
                                 {/* Points Allocation Table */}
                                 <div className="border border-slate-200 rounded-xl overflow-hidden">

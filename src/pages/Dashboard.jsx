@@ -1,16 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import { orderService } from '../services/orderService';
 import { leadService } from '../services/leadService';
+import { paymentService } from '../services/paymentService';
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
     BarChart, Bar, PieChart, Pie, Cell, Legend, AreaChart, Area, ComposedChart
 } from 'recharts';
-import { format, parseISO, startOfMonth, subDays, isSameDay, subMonths, isWithinInterval, endOfMonth, getYear, setYear, setMonth, getDate, getDaysInMonth, startOfYear, endOfYear, eachDayOfInterval, eachMonthOfInterval } from 'date-fns';
-import { TrendingUp, TrendingDown, DollarSign, Package, Users, Award } from 'lucide-react';
+import { format, parseISO, startOfMonth, subDays, isSameDay, subMonths, isWithinInterval, endOfMonth, getYear, startOfYear, endOfYear, eachDayOfInterval, eachMonthOfInterval } from 'date-fns';
+import { TrendingUp, TrendingDown, DollarSign, Package, Users, Award, Wallet, AlertCircle, CheckCircle2, Clock, Calendar, BarChart3, PieChart as PieIcon, Activity } from 'lucide-react';
 
 const Dashboard = () => {
     const [loading, setLoading] = useState(true);
     const [allOrders, setAllOrders] = useState([]);
+    const [allPayments, setAllPayments] = useState([]);
     const [revenueFilter, setRevenueFilter] = useState({ year: 'last_12_months', month: 'all' });
     const [revenueChartData, setRevenueChartData] = useState([]);
     const [availableYears, setAvailableYears] = useState([]);
@@ -25,26 +27,39 @@ const Dashboard = () => {
         leadFunnel: [],
         topProducts: [],
         beneficiaryRoles: [],
-        growth: { revenue: 0, orders: 0, points: 0, leads: 0 }
+        growth: { revenue: 0, orders: 0, points: 0, leads: 0 },
+        paymentStats: {
+            totalCollected: 0,
+            totalOutstanding: 0,
+            overdueCount: 0,
+            overdueAmount: 0,
+            collectionRate: 0,
+            statusDist: [],
+            // monthlyCollections removed from here as it's now part of main chart
+        }
     });
 
     useEffect(() => {
         const fetchData = async () => {
             try {
-                const [ordersRes, leadsRes] = await Promise.all([
+                const [ordersRes, leadsRes, paymentsRes] = await Promise.all([
                     orderService.getOrders(),
-                    leadService.getLeads()
+                    leadService.getLeads(),
+                    paymentService.getPayments()
                 ]);
 
                 const orders = ordersRes.data || [];
                 const leads = leadsRes.data || [];
+                const payments = paymentsRes.data || [];
 
                 setAllOrders(orders);
+                setAllPayments(payments);
+
                 // Use order_date if available, otherwise fallback to created_at
                 const years = Array.from(new Set(orders.map(o => getYear(parseISO(o.order_date || o.created_at))))).sort((a, b) => b - a);
                 setAvailableYears(years);
 
-                processData(orders, leads);
+                processData(orders, leads, payments);
             } catch (error) {
                 console.error("Failed to fetch dashboard data:", error);
             } finally {
@@ -55,7 +70,7 @@ const Dashboard = () => {
         fetchData();
     }, []);
 
-    const processData = (orders, leads) => {
+    const processData = (orders, leads, payments) => {
         const today = new Date();
         const currentMonthStart = startOfMonth(today);
         const lastMonthStart = startOfMonth(subMonths(today, 1));
@@ -64,9 +79,10 @@ const Dashboard = () => {
         // 1. Core Metrics
         const currentMonthOrders = orders.filter(o => new Date(o.order_date || o.created_at) >= currentMonthStart);
         const lastMonthOrders = orders.filter(o => isWithinInterval(new Date(o.order_date || o.created_at), { start: lastMonthStart, end: lastMonthEnd }));
-        const totalRevenue = orders.reduce((sum, o) => sum + (parseFloat(o.total_amount) || 0), 0);
         const currentRevenue = currentMonthOrders.reduce((sum, o) => sum + (parseFloat(o.total_amount) || 0), 0);
         const lastRevenue = lastMonthOrders.reduce((sum, o) => sum + (parseFloat(o.total_amount) || 0), 0);
+
+        const totalRevenue = orders.reduce((sum, o) => sum + (parseFloat(o.total_amount) || 0), 0);
 
         const calcGrowth = (current, last) => last === 0 ? 0 : ((current - last) / last) * 100;
 
@@ -93,20 +109,6 @@ const Dashboard = () => {
 
         // 2. Charts Data Structure
 
-        // Monthly Trends
-        const monthMap = {};
-        orders.forEach(order => {
-            const date = parseISO(order.order_date || order.created_at);
-            const key = format(date, 'MMM yyyy');
-            if (!monthMap[key]) monthMap[key] = { name: key, revenue: 0, orders: 0, sortDate: date };
-            monthMap[key].revenue += (parseFloat(order.total_amount) || 0);
-            monthMap[key].orders += 1;
-        });
-        // Limit to last 12 months for cleaner view
-        const monthlyRevenue = Object.values(monthMap)
-            .sort((a, b) => a.sortDate - b.sortDate)
-            .slice(-12);
-
         // Daily Activity (Last 14 days for cleaner view)
         const daysToShow = 14;
         const dailyInterval = Array.from({ length: daysToShow }, (_, i) => subDays(today, daysToShow - 1 - i));
@@ -131,7 +133,7 @@ const Dashboard = () => {
             .sort((a, b) => b.revenue - a.revenue)
             .slice(0, 6);
 
-        // Lead Funnel (Process Order)
+        // Lead Funnel
         const statusOrder = ['New', 'Contacted', 'Qualified', 'Proposal Sent', 'Negotiation', 'Won', 'Lost'];
         const funnelMap = {};
         leads.forEach(lead => {
@@ -176,12 +178,44 @@ const Dashboard = () => {
             .map(([name, value]) => ({ name, value }))
             .sort((a, b) => b.value - a.value);
 
+        // --- PAYMENT ANALYTICS ---
+        const totalCollected = payments.reduce((sum, p) => sum + (parseFloat(p.paid_amount) || 0), 0);
+        const totalOutstanding = payments.reduce((sum, p) => {
+            const amount = parseFloat(p.order_amount) || 0;
+            const paid = parseFloat(p.paid_amount) || 0;
+            return sum + (amount - paid);
+        }, 0);
+
+        const collectionRate = totalRevenue > 0 ? (totalCollected / totalRevenue) * 100 : 0;
+
+        // Overdue
+        let overdueCount = 0;
+        let overdueAmount = 0;
+        const now = new Date();
+        payments.forEach(p => {
+            if (p.payment_status !== 'Paid' && p.due_date) {
+                const due = parseISO(p.due_date);
+                if (due < now) {
+                    overdueCount++;
+                    overdueAmount += ((parseFloat(p.order_amount) || 0) - (parseFloat(p.paid_amount) || 0));
+                }
+            }
+        });
+
+        // Payment Status Distribution
+        const pStatusMap = {};
+        payments.forEach(p => {
+            const s = p.payment_status || 'Pending';
+            pStatusMap[s] = (pStatusMap[s] || 0) + 1;
+        });
+        const statusDist = Object.entries(pStatusMap).map(([name, value]) => ({ name, value }));
+
         setStats({
             totalRevenue,
             totalOrders: orders.length,
             totalPoints,
             activeLeads,
-            monthlyRevenue,
+            monthlyRevenue: [], // calculated in effect
             dailyActivity,
             cityPerformance,
             leadFunnel,
@@ -192,100 +226,117 @@ const Dashboard = () => {
                 orders: calcGrowth(currentMonthOrders.length, lastMonthOrders.length),
                 points: calcGrowth(currentPoints, lastPoints),
                 leads: calcGrowth(currentMonthLeads, lastMonthLeads)
+            },
+            paymentStats: {
+                totalCollected,
+                totalOutstanding,
+                overdueCount,
+                overdueAmount,
+                collectionRate,
+                statusDist
             }
         });
     };
 
-    // Calculate detailed revenue data based on filters
+    // Calculate detailed revenue AND collection data based on filters
     useEffect(() => {
-        if (!allOrders.length) return;
+        // Run even if one list is empty, but generally we need orders
+        if (!allOrders.length && !allPayments.length) return;
 
         let data = [];
         const { year, month } = revenueFilter;
 
+        // Helper to init map
+        const initMap = (intervalFn, formatFn) => {
+            const map = {};
+            intervalFn.forEach(d => {
+                const key = formatFn(d);
+                map[key] = { name: key, revenue: 0, collected: 0, orders: 0, sortDate: d };
+            });
+            return map;
+        };
+
+        const processItems = (map, items, dateField, valueField, type, formatFn) => {
+            items.forEach(item => {
+                if (!item[dateField]) return;
+                const date = parseISO(item[dateField]);
+                // Filter Logic inside loop to handle 'specific year' etc.
+                if (year !== 'last_12_months' && year !== 'full_history') {
+                    if (getYear(date) !== parseInt(year)) return;
+                    if (month !== 'all' && date.getMonth() !== (parseInt(month) - 1)) return;
+                }
+
+                const key = formatFn(date);
+                if (map[key]) {
+                    if (type === 'order') {
+                        map[key].revenue += (parseFloat(item[valueField]) || 0);
+                        map[key].orders += 1;
+                    } else if (type === 'payment') {
+                        map[key].collected += (parseFloat(item[valueField]) || 0);
+                    }
+                }
+            });
+        };
+
+        let map = {};
+
         if (year === 'last_12_months') {
             // Default: Last 12 months (Monthly View)
-            const monthMap = {};
-            // Initialize last 12 months
             const today = new Date();
-            for (let i = 11; i >= 0; i--) {
-                const d = subMonths(today, i);
-                const key = format(d, 'MMM yyyy');
-                monthMap[key] = { name: key, revenue: 0, orders: 0, sortDate: d };
-            }
+            const months = Array.from({ length: 12 }, (_, i) => subMonths(today, 11 - i));
 
+            map = initMap(months, (d) => format(d, 'MMM yyyy'));
+
+            // Process Orders
             allOrders.forEach(order => {
                 const date = parseISO(order.order_date || order.created_at);
                 const key = format(date, 'MMM yyyy');
-                if (monthMap[key]) {
-                    monthMap[key].revenue += (parseFloat(order.total_amount) || 0);
-                    monthMap[key].orders += 1;
+                if (map[key]) {
+                    map[key].revenue += (parseFloat(order.total_amount) || 0);
+                    map[key].orders += 1;
                 }
             });
 
-            data = Object.values(monthMap).sort((a, b) => a.sortDate - b.sortDate);
-
-        } else if (year === 'full_history') {
-            // All Time History (Monthly View)
-            if (allOrders.length === 0) {
-                data = [];
-            } else {
-                // Find min date
-                const timestamps = allOrders.map(o => parseISO(o.order_date || o.created_at).getTime());
-                const minDate = new Date(Math.min(...timestamps));
-                const maxDate = new Date();
-
-                const start = startOfMonth(minDate);
-                const end = endOfMonth(maxDate);
-
-                // If start is after end (shouldn't happen with valid data), fallback
-                if (start > end) {
-                    data = [];
-                } else {
-                    const months = eachMonthOfInterval({ start, end });
-                    const monthMap = {};
-                    months.forEach(m => {
-                        const key = format(m, 'MMM yyyy');
-                        monthMap[key] = { name: key, revenue: 0, orders: 0, sortDate: m };
-                    });
-
-                    allOrders.forEach(order => {
-                        const date = parseISO(order.order_date || order.created_at);
-                        const key = format(date, 'MMM yyyy');
-                        if (monthMap[key]) {
-                            monthMap[key].revenue += (parseFloat(order.total_amount) || 0);
-                            monthMap[key].orders += 1;
-                        }
-                    });
-
-                    data = Object.values(monthMap).sort((a, b) => a.sortDate - b.sortDate);
-                }
-            }
-
-        } else if (year !== 'last_12_months' && year !== 'full_history' && month === 'all') {
-            // Specific Year (Monthly View for that year)
-            const start = startOfYear(new Date(parseInt(year), 0));
-            const end = endOfYear(new Date(parseInt(year), 0));
-            const months = eachMonthOfInterval({ start, end });
-
-            const monthMap = {};
-            months.forEach(m => {
-                const key = format(m, 'MMM');
-                monthMap[key] = { name: key, revenue: 0, orders: 0, sortDate: m };
-            });
-
-            allOrders.forEach(order => {
-                const date = parseISO(order.order_date || order.created_at);
-                if (getYear(date) === parseInt(year)) {
-                    const key = format(date, 'MMM');
-                    if (monthMap[key]) {
-                        monthMap[key].revenue += (parseFloat(order.total_amount) || 0);
-                        monthMap[key].orders += 1;
+            // Process Payments (use actual_payment_date)
+            allPayments.forEach(payment => {
+                if (payment.actual_payment_date) {
+                    const date = parseISO(payment.actual_payment_date);
+                    const key = format(date, 'MMM yyyy');
+                    if (map[key]) {
+                        map[key].collected += (parseFloat(payment.paid_amount) || 0);
                     }
                 }
             });
 
-            data = Object.values(monthMap).sort((a, b) => a.sortDate - b.sortDate);
+        } else if (year === 'full_history') {
+            // All Time History (Monthly View)
+            if (allOrders.length === 0) return;
+
+            const timestamps = allOrders.map(o => parseISO(o.order_date || o.created_at).getTime());
+            const minDate = new Date(Math.min(...timestamps));
+            const maxDate = new Date();
+            const start = startOfMonth(minDate);
+            const end = endOfMonth(maxDate);
+
+            if (start <= end) {
+                const months = eachMonthOfInterval({ start, end });
+                map = initMap(months, (d) => format(d, 'MMM yyyy'));
+
+                processItems(map, allOrders, 'order_date', 'total_amount', 'order', (d) => format(d, 'MMM yyyy'));
+                // Use actual_payment_date for payments
+                processItems(map, allPayments, 'actual_payment_date', 'paid_amount', 'payment', (d) => format(d, 'MMM yyyy'));
+            }
+
+        } else if (month === 'all') {
+            // Specific Year (Monthly View)
+            const start = startOfYear(new Date(parseInt(year), 0));
+            const end = endOfYear(new Date(parseInt(year), 0));
+            const months = eachMonthOfInterval({ start, end });
+
+            map = initMap(months, (d) => format(d, 'MMM'));
+
+            processItems(map, allOrders, 'order_date', 'total_amount', 'order', (d) => format(d, 'MMM'));
+            processItems(map, allPayments, 'actual_payment_date', 'paid_amount', 'payment', (d) => format(d, 'MMM'));
 
         } else {
             // Specific Year AND Month (Daily View)
@@ -294,38 +345,24 @@ const Dashboard = () => {
             const end = endOfMonth(targetDate);
             const days = eachDayOfInterval({ start, end });
 
-            const dayMap = {};
-            days.forEach(d => {
-                const key = format(d, 'dd MMM');
-                dayMap[key] = { name: key, revenue: 0, orders: 0, sortDate: d };
-            });
+            map = initMap(days, (d) => format(d, 'dd MMM'));
 
-            allOrders.forEach(order => {
-                const date = parseISO(order.order_date || order.created_at);
-                if (getYear(date) === parseInt(year) && date.getMonth() === (parseInt(month) - 1)) {
-                    const key = format(date, 'dd MMM');
-                    if (dayMap[key]) {
-                        dayMap[key].revenue += (parseFloat(order.total_amount) || 0);
-                        dayMap[key].orders += 1;
-                    }
-                }
-            });
-
-            data = Object.values(dayMap).sort((a, b) => a.sortDate - b.sortDate);
+            processItems(map, allOrders, 'order_date', 'total_amount', 'order', (d) => format(d, 'dd MMM'));
+            processItems(map, allPayments, 'actual_payment_date', 'paid_amount', 'payment', (d) => format(d, 'dd MMM'));
         }
 
+        data = Object.values(map).sort((a, b) => a.sortDate - b.sortDate);
         setRevenueChartData(data);
-    }, [allOrders, revenueFilter]);
+    }, [allOrders, allPayments, revenueFilter]);
 
     if (loading) {
         return (
-            <div className="h-full flex items-center justify-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-900"></div>
+            <div className="h-full flex items-center justify-center bg-slate-50/50">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
             </div>
         );
     }
 
-    // Modern Professional Palette
     const COLORS = ['#2563eb', '#f59e0b', '#10b981', '#8b5cf6', '#06b6d4', '#f43f5e', '#64748b'];
     const CHART_COLORS = {
         primary: '#2563eb', // Blue 600
@@ -336,68 +373,76 @@ const Dashboard = () => {
     };
 
     return (
-        <div className="h-full flex flex-col gap-6 overflow-y-auto pb-6 px-1">
-            {/* Minimal Header */}
-            <div className="flex flex-col gap-1">
-                <h1 className="text-2xl font-bold tracking-tight text-slate-900">Overview</h1>
-                <p className="text-slate-500 text-sm">Business performance metrics and analytics.</p>
+        <div className="h-full flex flex-col gap-6 overflow-y-auto pb-10 px-4 sm:px-6 bg-slate-50/50">
+            {/* Page Header */}
+            <div className="flex flex-col gap-1 mt-6">
+                <h1 className="text-3xl font-bold tracking-tight text-slate-900">Dashboard</h1>
+                <p className="text-slate-500 text-sm md:text-base">Comprehensive view of Sales performance and Financial status.</p>
             </div>
 
-            {/* KPI Cards - Clean & Minimal */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Consolidated Key Metrics - Mixing Sales & Finance for a single view */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
                 <StatCard
-                    title="Revenue"
+                    title="Total Revenue"
                     value={`₹${(stats.totalRevenue / 1000).toFixed(1)}k`}
-                    subValue="Total Revenue"
+                    subValue="Total Invoiced"
                     growth={stats.growth.revenue}
                     icon={DollarSign}
+                    color="blue"
                 />
                 <StatCard
-                    title="Orders"
+                    title="Total Collected"
+                    value={`₹${(stats.paymentStats.totalCollected / 1000).toFixed(1)}k`}
+                    subValue="Actual Received"
+                    growth={0}
+                    icon={Wallet}
+                    color="emerald"
+                />
+                <StatCard
+                    title="Outstanding"
+                    value={`₹${(stats.paymentStats.totalOutstanding / 1000).toFixed(1)}k`}
+                    subValue="Pending Receivables"
+                    growth={0} // Negative growth logic would be nice here but keeping simple
+                    icon={AlertCircle}
+                    color="amber"
+                    inverseTrend
+                />
+                <StatCard
+                    title="Total Orders"
                     value={stats.totalOrders}
-                    subValue="Total Orders"
+                    subValue="Volume"
                     growth={stats.growth.orders}
                     icon={Package}
-                />
-                <StatCard
-                    title="Allocated Points"
-                    value={stats.totalPoints.toLocaleString()}
-                    subValue="Total Points"
-                    growth={stats.growth.points}
-                    icon={Award}
-                />
-                <StatCard
-                    title="Leads"
-                    value={stats.activeLeads}
-                    subValue="Active Leads"
-                    growth={stats.growth.leads}
-                    icon={Users}
+                    color="indigo"
                 />
             </div>
 
-            {/* Main Charts Row 1: Side by Side */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Revenue & Growth Trend */}
-                <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
+            {/* Main Combined Analytics Section */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Main Composited Chart: Revenue vs Collected vs Orders */}
+                <div className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
-                        <h3 className="text-base font-semibold text-slate-900">Revenue & Order Growth</h3>
+                        <div>
+                            <h3 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
+                                <Activity size={18} className="text-blue-500" />
+                                Financial Performance
+                            </h3>
+                            <p className="text-slate-500 text-xs">Revenue (Invoiced) vs Collected (Received)</p>
+                        </div>
                         <div className="flex gap-2">
-                            {/* Year Selector */}
                             <select
-                                className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 outline-none"
+                                className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 outline-none cursor-pointer hover:bg-slate-100 transition-colors"
                                 value={revenueFilter.year}
                                 onChange={(e) => setRevenueFilter(prev => ({ ...prev, year: e.target.value, month: (e.target.value === 'last_12_months' || e.target.value === 'full_history') ? 'all' : prev.month }))}
                             >
                                 <option value="last_12_months">Last 12 Months</option>
-                                <option value="full_history">All Time History</option>
+                                <option value="full_history">All Time</option>
                                 {availableYears.map(year => (
                                     <option key={year} value={year}>{year}</option>
                                 ))}
                             </select>
-
-                            {/* Month Selector */}
                             <select
-                                className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 outline-none disabled:opacity-50"
+                                className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 outline-none disabled:opacity-50 cursor-pointer hover:bg-slate-100 transition-colors"
                                 value={revenueFilter.month}
                                 onChange={(e) => setRevenueFilter(prev => ({ ...prev, month: e.target.value }))}
                                 disabled={revenueFilter.year === 'last_12_months' || revenueFilter.year === 'full_history'}
@@ -412,119 +457,168 @@ const Dashboard = () => {
                         </div>
                     </div>
 
-                    <ResponsiveContainer width="100%" height={300}>
-                        <ComposedChart data={revenueChartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                            <defs>
-                                <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor={CHART_COLORS.primary} stopOpacity={0.1} />
-                                    <stop offset="95%" stopColor={CHART_COLORS.primary} stopOpacity={0} />
-                                </linearGradient>
-                            </defs>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                            <XAxis
-                                dataKey="name"
-                                tick={{ fontSize: 11, fill: '#64748b' }}
-                                axisLine={false}
-                                tickLine={false}
-                                dy={10}
-                                minTickGap={30}
-                            />
-                            <YAxis
-                                yAxisId="left"
-                                tick={{ fontSize: 11, fill: '#64748b' }}
-                                axisLine={false}
-                                tickLine={false}
-                                tickFormatter={(val) => `₹${val / 1000}k`}
-                            />
-                            <YAxis
-                                yAxisId="right"
-                                orientation="right"
-                                tick={{ fontSize: 11, fill: '#64748b' }}
-                                axisLine={false}
-                                tickLine={false}
-                            />
-                            <Tooltip content={<CustomTooltip />} />
-                            <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '20px' }} iconType="circle" />
+                    <div className="flex-1 w-full min-h-[300px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <ComposedChart data={revenueChartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                                <defs>
+                                    <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor={CHART_COLORS.primary} stopOpacity={0.1} />
+                                        <stop offset="95%" stopColor={CHART_COLORS.primary} stopOpacity={0} />
+                                    </linearGradient>
+                                    <linearGradient id="colorCollected" x1="0" y1="0" x2="0" y2="1">
+                                        <stop offset="5%" stopColor={CHART_COLORS.tertiary} stopOpacity={0.1} />
+                                        <stop offset="95%" stopColor={CHART_COLORS.tertiary} stopOpacity={0} />
+                                    </linearGradient>
+                                </defs>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                <XAxis
+                                    dataKey="name"
+                                    tick={{ fontSize: 11, fill: '#64748b' }}
+                                    axisLine={false}
+                                    tickLine={false}
+                                    dy={10}
+                                    minTickGap={30}
+                                />
+                                <YAxis
+                                    yAxisId="left"
+                                    tick={{ fontSize: 11, fill: '#64748b' }}
+                                    axisLine={false}
+                                    tickLine={false}
+                                    tickFormatter={(val) => `₹${val / 1000}k`}
+                                />
+                                <YAxis
+                                    yAxisId="right"
+                                    orientation="right"
+                                    tick={{ fontSize: 11, fill: '#64748b' }}
+                                    axisLine={false}
+                                    tickLine={false}
+                                />
+                                <Tooltip content={<CustomTooltip />} />
+                                <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '20px' }} iconType="circle" />
 
-                            <Area
-                                yAxisId="left"
-                                type="monotone"
-                                dataKey="revenue"
-                                name="Revenue"
-                                stroke={CHART_COLORS.primary}
-                                fillOpacity={1}
-                                fill="url(#colorRevenue)"
-                                strokeWidth={2}
-                                dot={{ r: 4, fill: CHART_COLORS.primary, stroke: 'white', strokeWidth: 2 }}
-                                activeDot={{ r: 6, strokeWidth: 0 }}
-                            />
-                            <Line
-                                yAxisId="right"
-                                type="monotone"
-                                dataKey="orders"
-                                name="Orders"
-                                stroke={CHART_COLORS.secondary}
-                                strokeWidth={2}
-                                dot={{ r: 4, fill: 'white', stroke: CHART_COLORS.secondary, strokeWidth: 2 }}
-                            />
-                        </ComposedChart>
-                    </ResponsiveContainer>
+                                <Area
+                                    yAxisId="left"
+                                    type="monotone"
+                                    dataKey="revenue"
+                                    name="Invoiced"
+                                    stroke={CHART_COLORS.primary}
+                                    fillOpacity={1}
+                                    fill="url(#colorRevenue)"
+                                    strokeWidth={3}
+                                />
+                                <Area
+                                    yAxisId="left"
+                                    type="monotone"
+                                    dataKey="collected"
+                                    name="Collected"
+                                    stroke={CHART_COLORS.tertiary}
+                                    fillOpacity={1}
+                                    fill="url(#colorCollected)"
+                                    strokeWidth={3}
+                                />
+                                <Line
+                                    yAxisId="right"
+                                    type="monotone"
+                                    dataKey="orders"
+                                    name="Orders"
+                                    stroke={CHART_COLORS.secondary}
+                                    strokeWidth={3}
+                                    dot={false}
+                                    activeDot={{ r: 6 }}
+                                />
+                            </ComposedChart>
+                        </ResponsiveContainer>
+                    </div>
                 </div>
 
-                {/* Daily Activity Pulse */}
-                <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
-                    <h3 className="text-base font-semibold text-slate-900 mb-6">Daily Orders (14 Days)</h3>
-                    <ResponsiveContainer width="100%" height={300}>
-                        <AreaChart data={stats.dailyActivity} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                            <defs>
-                                <linearGradient id="colorOrdersDaily" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="5%" stopColor={CHART_COLORS.quaternary} stopOpacity={0.2} />
-                                    <stop offset="95%" stopColor={CHART_COLORS.quaternary} stopOpacity={0} />
-                                </linearGradient>
-                            </defs>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                            <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} interval={2} />
-                            <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
-                            <Tooltip content={<CustomTooltip />} />
-                            <Area type="monotone" dataKey="orders" stroke={CHART_COLORS.quaternary} fill="url(#colorOrdersDaily)" strokeWidth={2} />
-                        </AreaChart>
-                    </ResponsiveContainer>
+                {/* Payment Status Side Chart */}
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col">
+                    <h3 className="text-lg font-semibold text-slate-900 mb-2 flex items-center gap-2">
+                        <PieIcon size={18} className="text-amber-500" />
+                        Payment Status
+                    </h3>
+                    <div className="flex-1 min-h-[250px] flex items-center justify-center">
+                        <ResponsiveContainer width="100%" height={250}>
+                            <PieChart>
+                                <Pie
+                                    data={stats.paymentStats.statusDist}
+                                    cx="50%"
+                                    cy="50%"
+                                    innerRadius={65}
+                                    outerRadius={85}
+                                    paddingAngle={4}
+                                    dataKey="value"
+                                    stroke="none"
+                                    cornerRadius={4}
+                                >
+                                    {stats.paymentStats.statusDist.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={entry.name === 'Paid' ? '#10b981' : entry.name === 'Pending' ? '#ef4444' : '#f59e0b'} />
+                                    ))}
+                                </Pie>
+                                <Tooltip content={<CustomTooltip />} />
+                                <Legend
+                                    layout="horizontal"
+                                    verticalAlign="bottom"
+                                    align="center"
+                                    wrapperStyle={{ fontSize: '11px', color: '#64748b', paddingTop: '20px' }}
+                                    iconSize={8}
+                                    iconType="circle"
+                                />
+                            </PieChart>
+                        </ResponsiveContainer>
+                    </div>
                 </div>
             </div>
 
-            {/* Secondary Charts Row 2: Three Columns */}
+            {/* Tertiary Metrics Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-                {/* Lead Funnel Vertical */}
-                <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
-                    <h3 className="text-base font-semibold text-slate-900 mb-6">Lead Pipeline</h3>
-                    <ResponsiveContainer width="100%" height={250}>
-                        <BarChart
-                            data={stats.leadFunnel}
-                            margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
-                            barSize={32}
-                        >
+                {/* Top Products */}
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                    <h3 className="text-lg font-semibold text-slate-900 mb-6 flex items-center gap-2">
+                        <Package size={18} className="text-fuchsia-500" />
+                        Product Mix
+                    </h3>
+                    <div className="flex items-center justify-center">
+                        <ResponsiveContainer width="100%" height={200}>
+                            <PieChart>
+                                <Pie
+                                    data={stats.topProducts}
+                                    cx="50%"
+                                    cy="50%"
+                                    innerRadius={50}
+                                    outerRadius={70}
+                                    paddingAngle={3}
+                                    dataKey="value"
+                                    stroke="none"
+                                    cornerRadius={4}
+                                >
+                                    {stats.topProducts.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                    ))}
+                                </Pie>
+                                <Tooltip content={<CustomTooltip />} />
+                                <Legend layout="vertical" verticalAlign="middle" align="right" wrapperStyle={{ fontSize: '10px' }} iconSize={6} />
+                            </PieChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+
+                {/* Lead Funnel */}
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                    <h3 className="text-lg font-semibold text-slate-900 mb-6 flex items-center gap-2">
+                        <Users size={18} className="text-teal-500" />
+                        Lead Pipeline
+                    </h3>
+                    <ResponsiveContainer width="100%" height={200}>
+                        <BarChart data={stats.leadFunnel} margin={{ top: 10, right: 10, left: -20, bottom: 0 }} barSize={24}>
                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                            <XAxis
-                                dataKey="name"
-                                tick={{ fontSize: 10, fill: '#64748b' }}
-                                axisLine={false}
-                                tickLine={false}
-                                tickMargin={10}
-                            />
-                            <YAxis
-                                tick={{ fontSize: 10, fill: '#64748b' }}
-                                axisLine={false}
-                                tickLine={false}
-                                allowDecimals={false}
-                            />
-                            <Tooltip
-                                cursor={{ fill: '#f8fafc' }}
-                                contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                            />
-                            <Bar dataKey="value" radius={[6, 6, 0, 0]}>
+                            <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} interval={0} angle={-20} textAnchor="end" height={40} />
+                            <YAxis tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} allowDecimals={false} />
+                            <Tooltip cursor={{ fill: '#f8fafc' }} content={<CustomTooltip />} />
+                            <Bar dataKey="value" radius={[4, 4, 0, 0]}>
                                 {stats.leadFunnel.map((entry, index) => (
-                                    <Cell key={`cell-${index}`} fill={index === stats.leadFunnel.length - 1 ? '#ef4444' : index === stats.leadFunnel.length - 2 ? '#10b981' : '#3b82f6'} fillOpacity={0.9} />
+                                    <Cell key={`cell-${index}`} fill={index === stats.leadFunnel.length - 1 ? '#ef4444' : index === stats.leadFunnel.length - 2 ? '#10b981' : '#3b82f6'} />
                                 ))}
                             </Bar>
                         </BarChart>
@@ -532,66 +626,19 @@ const Dashboard = () => {
                 </div>
 
                 {/* City Performance */}
-                <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
-                    <h3 className="text-base font-semibold text-slate-900 mb-6">Top Cities Revenue</h3>
-                    <ResponsiveContainer width="100%" height={250}>
-                        <BarChart
-                            data={stats.cityPerformance}
-                            margin={{ top: 10, right: 10, left: -5, bottom: 0 }}
-                            barSize={32}
-                        >
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                            <XAxis
-                                dataKey="name"
-                                tick={{ fontSize: 10, fill: '#64748b' }}
-                                axisLine={false}
-                                tickLine={false}
-                                tickMargin={10}
-                            />
-                            <YAxis
-                                tick={{ fontSize: 10, fill: '#64748b' }}
-                                axisLine={false}
-                                tickLine={false}
-                                tickFormatter={(val) => `₹${(val / 1000).toFixed(0)}k`}
-                            />
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                    <h3 className="text-lg font-semibold text-slate-900 mb-6 flex items-center gap-2">
+                        <BarChart3 size={18} className="text-emerald-500" />
+                        City Revenue
+                    </h3>
+                    <ResponsiveContainer width="100%" height={200}>
+                        <BarChart data={stats.cityPerformance} layout="vertical" margin={{ top: 0, right: 30, left: 20, bottom: 0 }} barSize={12}>
+                            <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
+                            <XAxis type="number" hide />
+                            <YAxis dataKey="name" type="category" tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} width={70} />
                             <Tooltip content={<CustomTooltip />} cursor={{ fill: '#f8fafc' }} />
-                            <Bar dataKey="revenue" fill={CHART_COLORS.tertiary} radius={[6, 6, 0, 0]} />
+                            <Bar dataKey="revenue" fill={CHART_COLORS.tertiary} radius={[0, 4, 4, 0]} background={{ fill: '#f8fafc' }} />
                         </BarChart>
-                    </ResponsiveContainer>
-                </div>
-
-                {/* Top Products */}
-                <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
-                    <h3 className="text-base font-semibold text-slate-900 mb-2">Product Mix</h3>
-                    <ResponsiveContainer width="100%" height={250}>
-                        <PieChart>
-                            <Pie
-                                data={stats.topProducts}
-                                cx="50%"
-                                cy="50%"
-                                innerRadius={60}
-                                outerRadius={85}
-                                paddingAngle={3}
-                                dataKey="value"
-                                stroke="white"
-                                strokeWidth={2}
-                                cornerRadius={4}
-                            >
-                                {stats.topProducts.map((entry, index) => (
-                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                ))}
-                            </Pie>
-                            <Tooltip content={<CustomTooltip />} />
-                            <Legend
-                                layout="vertical"
-                                verticalAlign="middle"
-                                align="right"
-                                wrapperStyle={{ fontSize: '11px', color: '#64748b', right: 0 }}
-                                iconSize={8}
-                                iconType="circle"
-                            />
-                        </PieChart>
-
                     </ResponsiveContainer>
                 </div>
             </div>
@@ -599,27 +646,58 @@ const Dashboard = () => {
     );
 };
 
-// Sub-components for cleaner file
+// Reusable Components
 
-const StatCard = ({ title, value, subValue, growth = 0, icon: Icon }) => {
+const StatCard = ({ title, value, subValue, growth = 0, icon: Icon, color = 'blue', inverseTrend = false }) => {
     const isPositive = growth >= 0;
+    // trendColor logic: positive growth is good (green), unless it's something like "Overdue" where growth is bad.
+    // However, usually growth implies "increase".
+    // If inverseTrend is true (e.g. Overdue), increase (positive growth) is BAD (red).
+    // If inverseTrend is false (e.g. Revenue), increase is GOOD (green).
+
+    let trendColor = '';
+    let TrendIcon = TrendingUp;
+
+    if (inverseTrend) {
+        // High growth = Bad (Red), Low/Negative growth = Good (Green)
+        trendColor = isPositive ? 'text-rose-600 bg-rose-50' : 'text-emerald-600 bg-emerald-50';
+        TrendIcon = isPositive ? TrendingUp : TrendingDown;
+    } else {
+        // High growth = Good (Green), Low/Negative growth = Bad (Red)
+        trendColor = isPositive ? 'text-emerald-600 bg-emerald-50' : 'text-rose-600 bg-rose-50';
+        TrendIcon = isPositive ? TrendingUp : TrendingDown;
+    }
+
+    const colorClasses = {
+        emerald: 'bg-emerald-50 text-emerald-600',
+        amber: 'bg-amber-50 text-amber-600',
+        rose: 'bg-rose-50 text-rose-600',
+        blue: 'bg-blue-50 text-blue-600',
+        indigo: 'bg-indigo-50 text-indigo-600',
+        violet: 'bg-violet-50 text-violet-600',
+        cyan: 'bg-cyan-50 text-cyan-600',
+        teal: 'bg-teal-50 text-teal-600',
+    };
+
     return (
-        <div className="bg-white p-5 rounded-xl border border-slate-100 shadow-sm flex flex-col justify-between h-auto min-h-[120px]">
+        <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-[0_2px_10px_-3px_rgba(203,213,225,0.3)] hover:shadow-md transition-shadow duration-300 flex flex-col justify-between h-auto min-h-[140px]">
             <div className="flex justify-between items-start">
-                <div>
-                    <h3 className="text-slate-500 text-xs font-semibold uppercase tracking-wider mb-1">{title}</h3>
-                    <p className="text-2xl font-bold text-slate-900">{value}</p>
+                <div className="flex-1">
+                    <p className="text-slate-500 text-sm font-medium mb-1">{title}</p>
+                    <h4 className="text-2xl font-bold text-slate-900">{value}</h4>
                 </div>
-                <div className={`p-2 rounded-lg ${isPositive ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
-                    <Icon size={18} />
+                <div className={`p-3 rounded-xl ${colorClasses[color] || colorClasses.blue}`}>
+                    <Icon size={20} strokeWidth={2} />
                 </div>
             </div>
-            <div className="flex items-center gap-2 mt-4">
-                <span className={`flex items-center text-xs font-medium px-1.5 py-0.5 rounded ${isPositive ? 'text-emerald-700 bg-emerald-50' : 'text-rose-700 bg-rose-50'}`}>
-                    {isPositive ? <TrendingUp size={12} className="mr-1" /> : <TrendingDown size={12} className="mr-1" />}
-                    {Math.abs(growth).toFixed(1)}%
-                </span>
-                <span className="text-slate-400 text-xs">vs last month</span>
+            <div className="flex items-center gap-3 mt-4">
+                {growth !== 0 && (
+                    <span className={`flex items-center text-xs font-semibold px-2 py-0.5 rounded-full ${trendColor}`}>
+                        <TrendIcon size={12} className="mr-1" />
+                        {Math.abs(growth).toFixed(0)}%
+                    </span>
+                )}
+                <span className="text-slate-400 text-xs font-medium">{subValue}</span>
             </div>
         </div>
     );
@@ -628,15 +706,17 @@ const StatCard = ({ title, value, subValue, growth = 0, icon: Icon }) => {
 const CustomTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
         return (
-            <div className="bg-white p-3 border border-slate-100 shadow-lg rounded-lg outline-none">
-                <p className="text-slate-900 font-medium text-xs mb-1">{label}</p>
+            <div className="bg-white/95 backdrop-blur-sm p-3 border border-slate-100 shadow-xl rounded-xl outline-none min-w-[150px]">
+                <p className="text-slate-900 font-semibold text-xs mb-2 border-b border-slate-100 pb-1">{label}</p>
                 {payload.map((entry, index) => (
-                    <div key={index} className="flex items-center gap-2 text-xs">
-                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }} />
-                        <span className="text-slate-500 capitalize">{entry.name}:</span>
+                    <div key={index} className="flex items-center justify-between gap-4 text-xs py-0.5">
+                        <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color || entry.fill }} />
+                            <span className="text-slate-500 capitalize">{entry.name}:</span>
+                        </div>
                         <span className="font-semibold text-slate-700">
-                            {entry.name === 'Revenue' || entry.name === 'revenue'
-                                ? `₹${entry.value.toLocaleString()}`
+                            {['Invoiced', 'Revenue', 'revenue', 'Collected', 'collected', 'Paid', 'Pending', 'Overdue'].includes(entry.name)
+                                ? ((typeof entry.value === 'number') ? (entry.value > 1000 ? `₹${(entry.value / 1000).toFixed(1)}k` : `₹${entry.value}`) : entry.value)
                                 : entry.value.toLocaleString()}
                         </span>
                     </div>

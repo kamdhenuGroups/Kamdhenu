@@ -73,6 +73,7 @@ const Sidebar = ({ onClose }) => {
     { path: '/new-order', icon: ShoppingCart, label: 'New Order', id: 'new-order' },
     { path: '/leads', icon: Users, label: 'Leads', id: 'leads' },
     { path: '/crm', icon: Briefcase, label: 'CRM', id: 'crm' },
+    { path: '/order-details', icon: FileText, label: 'Order Details', id: 'order-details' },
 
     { path: '/settings', icon: Settings, label: 'Settings', id: 'settings' },
   ];

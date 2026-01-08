@@ -10,6 +10,7 @@ import NewOrder from './pages/NewOrder';
 import Leads from './pages/Leads';
 import Dashboard from './pages/Dashboard';
 import CRM from './pages/CRM';
+import OrderDetails from './pages/OrderDetails';
 
 
 
@@ -35,6 +36,7 @@ function App() {
             <Route path="leads" element={<Leads />} />
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="crm" element={<CRM />} />
+            <Route path="order-details" element={<OrderDetails />} />
 
           </Route>
 

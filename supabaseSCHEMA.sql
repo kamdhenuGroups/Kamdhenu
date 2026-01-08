@@ -37,6 +37,7 @@ CREATE TABLE public.orders (
   manual_payment_days integer,
   remarks text,
   order_status text DEFAULT 'Pending'::text,
+  payment_status text DEFAULT 'Pending'::text,
   nickname text,
   mistry_name text,
   created_by_user_id text NOT NULL,
@@ -44,6 +45,26 @@ CREATE TABLE public.orders (
   created_at timestamp without time zone DEFAULT (now() AT TIME ZONE 'Asia/Kolkata'::text),
   CONSTRAINT orders_pkey PRIMARY KEY (order_id),
   CONSTRAINT orders_created_by_user_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.users(user_id)
+);
+CREATE TABLE public.payments (
+  payment_id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  order_id text NOT NULL UNIQUE,
+  order_amount numeric NOT NULL,
+  paid_amount numeric DEFAULT 0.00,
+  actual_payment_date date,
+  payment_mode text,
+  transaction_reference text,
+  payment_status text DEFAULT 'Pending'::text,
+  remarks text,
+  created_by_user_id text,
+  created_at timestamp without time zone DEFAULT (now() AT TIME ZONE 'Asia/Kolkata'::text),
+  updated_at timestamp without time zone DEFAULT (now() AT TIME ZONE 'Asia/Kolkata'::text),
+  payment_proof text,
+  due_date date,
+  total_days integer,
+  CONSTRAINT payments_pkey PRIMARY KEY (payment_id),
+  CONSTRAINT payments_order_fkey FOREIGN KEY (order_id) REFERENCES public.orders(order_id),
+  CONSTRAINT payments_created_by_user_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.users(user_id)
 );
 CREATE TABLE public.points_allocation (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -86,4 +107,3 @@ CREATE TABLE public.users (
   page_access ARRAY DEFAULT '{}'::text[],
   CONSTRAINT users_pkey PRIMARY KEY (user_id)
 );
-

@@ -27,6 +27,7 @@ import {
 import toast from 'react-hot-toast';
 import { INDIAN_LOCATIONS } from '../data/indianLocations';
 import { orderService, CUSTOMER_TYPES, idGenerator, POINT_ROLES, PAYMENT_OPTIONS, PRODUCTS } from '../services/orderService';
+import PaymentDetailsCard from '../components/PaymentDetailsCard';
 
 const useDropdownPosition = (isOpen) => {
     const ref = useRef(null);
@@ -484,6 +485,22 @@ const NewOrder = () => {
             setNickname(existingContractor.nickname);
         }
     }, [existingContractor]);
+
+    const getPaymentStatusColor = (status) => {
+        const normalizedStatus = status || 'Pending';
+        switch (normalizedStatus) {
+            case 'Paid':
+                return 'bg-green-100 text-green-700 border-green-200';
+            case 'Partially Paid':
+                return 'bg-blue-100 text-blue-700 border-blue-200';
+            case 'Pending':
+                return 'bg-orange-100 text-orange-700 border-orange-200';
+            case 'Overdue':
+                return 'bg-red-100 text-red-700 border-red-200';
+            default:
+                return 'bg-purple-100 text-purple-700 border-purple-200';
+        }
+    };
 
     return (
         <div className="h-full flex flex-col gap-6 overflow-hidden">
@@ -1666,6 +1683,7 @@ const NewOrder = () => {
                                             <th className="px-6 py-4 font-semibold text-slate-700 text-right whitespace-nowrap">Items</th>
                                             <th className="px-6 py-4 font-semibold text-slate-700 text-right whitespace-nowrap">Amount</th>
                                             <th className="px-6 py-4 font-semibold text-slate-700 text-center whitespace-nowrap">Status</th>
+                                            <th className="px-6 py-4 font-semibold text-slate-700 text-center whitespace-nowrap">Payment Status</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
@@ -1699,13 +1717,20 @@ const NewOrder = () => {
                                                     ₹ {order.total_amount?.toLocaleString() || '0'}
                                                 </td>
                                                 <td className="px-6 py-4 text-center whitespace-nowrap">
-                                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${order.order_status === 'Completed'
+                                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${['Approved', 'Completed'].includes(order.order_status)
                                                         ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
-                                                        : order.order_status === 'Processing'
-                                                            ? 'bg-blue-50 text-blue-700 border-blue-100'
-                                                            : 'bg-amber-50 text-amber-700 border-amber-100'
+                                                        : order.order_status === 'Rejected'
+                                                            ? 'bg-red-50 text-red-700 border-red-100'
+                                                            : order.order_status === 'Processing'
+                                                                ? 'bg-blue-50 text-blue-700 border-blue-100'
+                                                                : 'bg-amber-50 text-amber-700 border-amber-100'
                                                         }`}>
                                                         {order.order_status}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4 text-center whitespace-nowrap">
+                                                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getPaymentStatusColor(order.payment_status)}`}>
+                                                        {order.payment_status || 'Pending'}
                                                     </span>
                                                 </td>
                                             </tr>
@@ -1766,12 +1791,21 @@ const NewOrder = () => {
                                 {/* Status */}
                                 <div>
                                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Status</span>
-                                    <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold border ${selectedOrder.order_status === 'Completed' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
-                                        selectedOrder.order_status === 'Processing' ? 'bg-blue-50 text-blue-700 border-blue-100' :
-                                            'bg-amber-50 text-amber-700 border-amber-100'
+                                    <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold border ${['Approved', 'Completed'].includes(selectedOrder.order_status)
+                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                                        : selectedOrder.order_status === 'Rejected'
+                                            ? 'bg-red-50 text-red-700 border-red-100'
+                                            : selectedOrder.order_status === 'Processing'
+                                                ? 'bg-blue-50 text-blue-700 border-blue-100'
+                                                : 'bg-amber-50 text-amber-700 border-amber-100'
                                         }`}>
-                                        <span className={`w-1.5 h-1.5 rounded-full mr-2 ${selectedOrder.order_status === 'Completed' ? 'bg-emerald-500' :
-                                            selectedOrder.order_status === 'Processing' ? 'bg-blue-500' : 'bg-amber-500'
+                                        <span className={`w-1.5 h-1.5 rounded-full mr-2 ${['Approved', 'Completed'].includes(selectedOrder.order_status)
+                                            ? 'bg-emerald-500'
+                                            : selectedOrder.order_status === 'Rejected'
+                                                ? 'bg-red-500'
+                                                : selectedOrder.order_status === 'Processing'
+                                                    ? 'bg-blue-500'
+                                                    : 'bg-amber-500'
                                             }`}></span>
                                         {selectedOrder.order_status || 'Pending'}
                                     </span>
@@ -1904,6 +1938,8 @@ const NewOrder = () => {
                                             </div>
                                         </div>
                                     </div>
+
+
 
                                     {/* Items Table */}
                                     <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
@@ -2048,6 +2084,11 @@ const NewOrder = () => {
                                             </div>
                                         )}
                                     </div>
+                                    {/* Payment Details */}
+                                    <PaymentDetailsCard
+                                        order={selectedOrder}
+                                        payment={Array.isArray(selectedOrder.payments) ? selectedOrder.payments[0] : (selectedOrder.payments || {})}
+                                    />
                                 </div>
                             </div>
                         </div>

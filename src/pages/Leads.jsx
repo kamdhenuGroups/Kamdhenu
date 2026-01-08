@@ -142,8 +142,10 @@ const Leads = () => {
     const getStatusColor = (status) => {
         switch (status) {
             case 'New': return 'bg-blue-50 text-blue-700 border-blue-100';
-            case 'Contacted': return 'bg-yellow-50 text-yellow-700 border-yellow-100';
-            case 'Qualified': return 'bg-purple-50 text-purple-700 border-purple-100';
+            case 'Contacted': return 'bg-amber-50 text-amber-700 border-amber-100';
+            case 'Qualified': return 'bg-violet-50 text-violet-700 border-violet-100';
+            case 'Proposal Sent': return 'bg-indigo-50 text-indigo-700 border-indigo-100';
+            case 'Negotiation': return 'bg-orange-50 text-orange-700 border-orange-100';
             case 'Won': return 'bg-emerald-50 text-emerald-700 border-emerald-100';
             case 'Lost': return 'bg-red-50 text-red-700 border-red-100';
             default: return 'bg-slate-50 text-slate-700 border-slate-100';
@@ -424,8 +426,8 @@ const Leads = () => {
                                                 key={status}
                                                 onClick={() => setFormData(prev => ({ ...prev, lead_status: status }))}
                                                 className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${formData.lead_status === status
-                                                        ? 'bg-slate-800 text-white shadow-md'
-                                                        : 'bg-slate-50 text-slate-500 hover:bg-slate-100 border border-slate-200'
+                                                    ? 'bg-slate-800 text-white shadow-md'
+                                                    : 'bg-slate-50 text-slate-500 hover:bg-slate-100 border border-slate-200'
                                                     }`}
                                             >
                                                 {status}

@@ -187,6 +187,50 @@ export const orderService = {
                 }
             }
 
+            // 4. Insert Payment Record
+            // Calculate due date
+            let dueDate = payload.order_date ? new Date(payload.order_date) : new Date();
+            let totalDays = 0;
+
+            if (payload.payment_terms === 'Manual entry for days' && payload.manual_payment_days) {
+                totalDays = payload.manual_payment_days;
+                dueDate.setDate(dueDate.getDate() + totalDays);
+            } else if (payload.payment_terms === 'Net 7') { // Handling potential future term
+                totalDays = 7;
+                dueDate.setDate(dueDate.getDate() + 7);
+            } else if (payload.payment_terms === 'Net 15') {
+                totalDays = 15;
+                dueDate.setDate(dueDate.getDate() + 15);
+            }
+
+            const paymentPayload = {
+                order_id: order.order_id,
+                order_amount: payload.total_amount,
+                paid_amount: 0.00,
+                payment_status: 'Pending',
+                created_by_user_id: user.user_id,
+                due_date: dueDate.toISOString().split('T')[0],
+                total_days: totalDays
+            };
+
+            const { error: paymentError } = await supabase
+                .from('payments')
+                .insert([paymentPayload]);
+
+            if (paymentError) {
+                console.error('Error creating payment record:', paymentError);
+                // Rollback everything
+                if (points_allocations && points_allocations.length > 0) {
+                    await supabase.from('points_allocation').delete().eq('order_id', order.order_id);
+                }
+                // Check if products were inserted (items exists and has length)
+                if (items && items.length > 0) {
+                    await supabase.from('products').delete().eq('order_id', order.order_id);
+                }
+                await supabase.from('orders').delete().eq('order_id', order.order_id);
+                throw paymentError;
+            }
+
             return { data: order, error: null };
         } catch (error) {
             console.error('Error creating order:', error);
@@ -199,7 +243,7 @@ export const orderService = {
         try {
             const { data, error } = await supabase
                 .from('orders')
-                .select('*, items:products(*), allocations:points_allocation(*)')
+                .select('*, items:products(*), allocations:points_allocation(*), payments(*)')
                 .order('created_at', { ascending: false });
 
             if (error) throw error;
@@ -249,7 +293,7 @@ export const orderService = {
         try {
             const { data, error } = await supabase
                 .from('orders')
-                .select('*, items:products(*), allocations:points_allocation(*)')
+                .select('*, items:products(*), allocations:points_allocation(*), payments(*)')
                 .eq('order_id', orderId)
                 .single();
 

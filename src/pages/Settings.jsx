@@ -25,6 +25,7 @@ const ALL_PAGES = [
     { id: 'new-order', label: 'New Order' },
     { id: 'leads', label: 'Leads' },
     { id: 'crm', label: 'CRM' },
+    { id: 'order-details', label: 'Order Details' },
     { id: 'dashboard', label: 'Dashboard' },
 ];
 
