@@ -90,13 +90,13 @@ const OrderDetails = () => {
                 const filePath = `payment-proofs/${fileName}`;
 
                 const { error: uploadError } = await supabase.storage
-                    .from('documents') // Using 'documents' bucket as it's commonly available, or creates if not exists
+                    .from('payments-proof') // Using 'payments-proof' bucket as requested
                     .upload(filePath, selectedFile);
 
                 if (uploadError) throw uploadError;
 
                 const { data: { publicUrl } } = supabase.storage
-                    .from('documents')
+                    .from('payments-proof')
                     .getPublicUrl(filePath);
 
                 proofUrl = publicUrl;
