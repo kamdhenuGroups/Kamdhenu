@@ -8,6 +8,9 @@ import ProtectedRoute from './components/ProtectedRoute';
 import Settings from './pages/Settings';
 import NewOrder from './pages/NewOrder';
 import Leads from './pages/Leads';
+import Dashboard from './pages/Dashboard';
+import CRM from './pages/CRM';
+
 
 
 
@@ -30,6 +33,9 @@ function App() {
             <Route path="settings" element={<Settings />} />
             <Route path="new-order" element={<NewOrder />} />
             <Route path="leads" element={<Leads />} />
+            <Route path="dashboard" element={<Dashboard />} />
+            <Route path="crm" element={<CRM />} />
+
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

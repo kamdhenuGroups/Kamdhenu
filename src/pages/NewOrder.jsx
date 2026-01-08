@@ -1755,7 +1755,7 @@ const NewOrder = () => {
                                                 {new Date(selectedOrder.order_date).toLocaleDateString('en-GB')}
                                             </p>
                                             <p className="text-xs text-slate-500">
-                                                {new Date(selectedOrder.order_date).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                                                {selectedOrder.created_at ? new Date(selectedOrder.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : ''}
                                             </p>
                                         </div>
                                     </div>
@@ -1847,10 +1847,24 @@ const NewOrder = () => {
                                             </div>
                                             <div className="space-y-1">
                                                 <p className="text-base font-bold text-slate-800">{selectedOrder.contractor_name}</p>
-                                                <div className="flex flex-wrap gap-2 text-xs text-slate-500 font-medium">
-                                                    <span className="px-2 py-0.5 bg-slate-100 rounded text-slate-600">{selectedOrder.customer_type}</span>
-                                                    {selectedOrder.nickname && <span className="px-2 py-0.5 bg-slate-100 rounded text-slate-600">{selectedOrder.nickname}</span>}
-                                                </div>
+
+                                                {selectedOrder.customer_type === 'Mistry' ? (
+                                                    <div className="flex flex-col gap-1 mt-1">
+                                                        <div className="text-xs text-slate-500 font-medium">
+                                                            Contractor Type - <span className="font-bold text-slate-700">({selectedOrder.customer_type})</span>
+                                                        </div>
+                                                        {selectedOrder.contractor_id && (
+                                                            <div className="text-xs text-slate-500 font-medium">
+                                                                Associated Contractor - <span className="font-bold text-slate-700">({selectedOrder.contractor_id.split('/')[3]?.split('-')[0] || 'Unknown'})</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex flex-wrap gap-2 text-xs text-slate-500 font-medium">
+                                                        <span className="px-2 py-0.5 bg-slate-100 rounded text-slate-600">{selectedOrder.customer_type}</span>
+                                                    </div>
+                                                )}
+
                                                 <div className="flex items-center gap-1.5 text-sm text-slate-600 mt-2">
                                                     <Phone size={14} className="text-slate-400" />
                                                     {selectedOrder.customer_phone || selectedOrder.site_contact_number || 'No contact'}
@@ -1944,17 +1958,79 @@ const NewOrder = () => {
                                         </table>
                                     </div>
 
+                                    {/* Points Allocation Table */}
+                                    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                                        <div className="px-5 py-3 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+                                            <div className="flex items-center gap-2">
+                                                <Award size={16} className="text-primary" />
+                                                <h4 className="font-bold text-xs uppercase tracking-wider text-slate-800">Points Allocation</h4>
+                                            </div>
+                                            <span className="text-xs font-semibold text-slate-500">
+                                                {selectedOrder.allocations?.length || 0} Beneficiar{selectedOrder.allocations?.length !== 1 ? 'y' : 'ies'}
+                                            </span>
+                                        </div>
+                                        <table className="w-full text-sm text-left">
+                                            <thead className="bg-white text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100">
+                                                <tr>
+                                                    <th className="px-5 py-3">Person Name</th>
+                                                    <th className="px-5 py-3">Role</th>
+                                                    <th className="px-5 py-3 text-right">Phone (Last 4)</th>
+                                                    <th className="px-5 py-3 text-right">Points</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-50">
+                                                {selectedOrder.allocations && selectedOrder.allocations.length > 0 ? (
+                                                    selectedOrder.allocations.map((alloc, idx) => (
+                                                        <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
+                                                            <td className="px-5 py-3 font-medium text-slate-700">{alloc.person_name}</td>
+                                                            <td className="px-5 py-3 text-slate-600">
+                                                                <span className="px-2 py-0.5 rounded-md bg-slate-100/80 text-xs font-medium border border-slate-200/60">
+                                                                    {alloc.role}
+                                                                </span>
+                                                            </td>
+                                                            <td className="px-5 py-3 text-slate-600 text-right tabular-nums tracking-wider text-xs font-mono">
+                                                                ••• {alloc.phone_last_4}
+                                                            </td>
+                                                            <td className="px-5 py-3 text-emerald-600 text-right font-bold tabular-nums">
+                                                                +{alloc.allocated_points} P
+                                                            </td>
+                                                        </tr>
+                                                    ))
+                                                ) : (
+                                                    <tr>
+                                                        <td colSpan="4" className="px-5 py-8 text-center text-slate-400 text-xs italic">No points allocated</td>
+                                                    </tr>
+                                                )}
+                                            </tbody>
+                                            {selectedOrder.allocations && selectedOrder.allocations.length > 0 && (
+                                                <tfoot className="bg-slate-50/50 border-t border-slate-200/60">
+                                                    <tr>
+                                                        <td colSpan="3" className="px-5 py-3 font-semibold text-slate-600 text-xs text-right">Total Allocated</td>
+                                                        <td className="px-5 py-3 font-bold text-slate-800 text-right tabular-nums">
+                                                            {selectedOrder.allocations.reduce((sum, a) => sum + (a.allocated_points || 0), 0)} P
+                                                        </td>
+                                                    </tr>
+                                                </tfoot>
+                                            )}
+                                        </table>
+                                    </div>
+
                                     {/* Footer: Points To & Notes */}
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         {/* Points To */}
-                                        {selectedOrder.point_of_contact_role ? (
+                                        {/* Points To */}
+                                        {(selectedOrder.point_of_contact_role || (selectedOrder.allocations && selectedOrder.allocations.length > 0)) ? (
                                             <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex items-start gap-3">
                                                 <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg shrink-0">
                                                     <Award size={16} />
                                                 </div>
                                                 <div>
                                                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Points Beneficiary</span>
-                                                    <p className="text-sm font-bold text-slate-800">{selectedOrder.point_of_contact_role}</p>
+                                                    <p className="text-sm font-bold text-slate-800">
+                                                        {selectedOrder.allocations && selectedOrder.allocations.length > 0
+                                                            ? [...new Set(selectedOrder.allocations.map(a => a.role))].join(', ')
+                                                            : selectedOrder.point_of_contact_role}
+                                                    </p>
                                                 </div>
                                             </div>
                                         ) : <div></div>}

@@ -23,7 +23,9 @@ const ALL_PAGES = [
     { id: 'my-profile', label: 'My Profile' },
     { id: 'settings', label: 'Settings' },
     { id: 'new-order', label: 'New Order' },
-    { id: 'leads', label: 'Leads' }
+    { id: 'leads', label: 'Leads' },
+    { id: 'crm', label: 'CRM' },
+    { id: 'dashboard', label: 'Dashboard' },
 ];
 
 const DEFAULT_USER_PAGES = ['my-profile'];

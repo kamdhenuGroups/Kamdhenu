@@ -199,7 +199,7 @@ export const orderService = {
         try {
             const { data, error } = await supabase
                 .from('orders')
-                .select('*, items:products(*)')
+                .select('*, items:products(*), allocations:points_allocation(*)')
                 .order('created_at', { ascending: false });
 
             if (error) throw error;
@@ -241,6 +241,23 @@ export const orderService = {
         } catch (error) {
             console.error('Error deleting order:', error);
             return { error };
+        }
+    },
+
+    // Get single order by ID with details
+    getOrderById: async (orderId) => {
+        try {
+            const { data, error } = await supabase
+                .from('orders')
+                .select('*, items:products(*), allocations:points_allocation(*)')
+                .eq('order_id', orderId)
+                .single();
+
+            if (error) throw error;
+            return { data, error: null };
+        } catch (error) {
+            console.error('Error fetching order details:', error);
+            return { data: null, error };
         }
     },
 

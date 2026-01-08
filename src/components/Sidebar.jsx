@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import useAuthStore from '../store/authStore';
 import { NavLink, useNavigate } from 'react-router-dom';
+import { supabase } from '../supabase';
 import {
 
   LogOut as LogOutIcon,
@@ -11,13 +12,55 @@ import {
   ChevronUp,
   Settings,
   ShoppingCart,
-  Users
+  Users,
+  LayoutDashboard,
+  Briefcase,
+  FileText
 } from 'lucide-react';
 
 const Sidebar = ({ onClose }) => {
   const navigate = useNavigate();
   const { user } = useAuthStore();
   const [isOpen, setIsOpen] = useState(false);
+
+  useEffect(() => {
+    if (!user?.user_id) return;
+
+    const channel = supabase
+      .channel('user-permission-updates')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'users',
+          filter: `user_id=eq.${user.user_id}`,
+        },
+        (payload) => {
+          const newData = payload.new;
+          if (newData) {
+            // Get latest state from store to avoid stale closure
+            const currentUser = useAuthStore.getState().user;
+
+            // Merge new data while maintaining compatibility fields
+            const updatedUser = {
+              ...currentUser,
+              ...newData,
+              Name: newData.full_name || currentUser?.Name,
+              Admin: (newData.role?.toLowerCase() === 'admin' || newData.role === 'Admin') ? 'Yes' : 'No',
+            };
+
+            // Update the store immediately
+            useAuthStore.getState().login(updatedUser);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.user_id]);
 
   const handleLogout = () => {
     localStorage.removeItem('user');
@@ -26,8 +69,11 @@ const Sidebar = ({ onClose }) => {
 
   /* Combined Master Menu List for Permission Checking */
   const MASTER_MENU_ITEMS = [
+    { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', id: 'dashboard' },
     { path: '/new-order', icon: ShoppingCart, label: 'New Order', id: 'new-order' },
     { path: '/leads', icon: Users, label: 'Leads', id: 'leads' },
+    { path: '/crm', icon: Briefcase, label: 'CRM', id: 'crm' },
+
     { path: '/settings', icon: Settings, label: 'Settings', id: 'settings' },
   ];
 
