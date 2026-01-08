@@ -444,8 +444,8 @@ const OrderDetails = () => {
             {/* Edit Payment Modal */}
             {isEditModalOpen && editingPayment && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
-                    <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl border border-slate-200 overflow-hidden">
-                        <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50/50">
+                    <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl border border-slate-200 flex flex-col max-h-[90vh] overflow-hidden">
+                        <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50/50 shrink-0">
                             <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
                                 <CreditCard className="text-primary" size={20} />
                                 Update Payment Details
@@ -458,7 +458,7 @@ const OrderDetails = () => {
                             </button>
                         </div>
 
-                        <form onSubmit={handleUpdatePayment} className="p-6 space-y-4">
+                        <form onSubmit={handleUpdatePayment} className="p-6 space-y-4 overflow-y-auto">
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 mb-1">Order Amount</label>
