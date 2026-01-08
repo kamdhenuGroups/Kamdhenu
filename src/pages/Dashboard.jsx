@@ -539,7 +539,7 @@ const Dashboard = () => {
                                 </Pie>
                                 <Tooltip
                                     contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                                    formatter={(value) => [`${value} Orders`, 'Volume']}
+                                    formatter={(value, name) => [`${value} Orders`, name]}
                                 />
                                 <Legend
                                     layout="vertical"
