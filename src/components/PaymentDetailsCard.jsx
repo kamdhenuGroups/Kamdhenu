@@ -83,7 +83,7 @@ const PaymentDetailsCard = ({ order, payment }) => {
 
             <div className="p-5 space-y-5">
                 {/* Key Amounts */}
-                <div className="grid grid-cols-3 gap-4 pb-4 border-b border-slate-50">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pb-4 border-b border-slate-50">
                     <div>
                         <span className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Total Amount</span>
                         <span className="text-sm font-bold text-slate-800">{formatCurrency(orderAmount)}</span>
@@ -99,7 +99,7 @@ const PaymentDetailsCard = ({ order, payment }) => {
                 </div>
 
                 {/* Dates & Reference */}
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                         <span className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Due Date</span>
                         <div className="flex items-center gap-2">

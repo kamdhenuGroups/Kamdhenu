@@ -16,12 +16,16 @@ import {
     ArrowUpRight,
     ArrowDownRight,
     Clock,
-    ChevronDown
+    ChevronDown,
+    X,
+    ArrowUp,
+    ArrowDown
 } from 'lucide-react';
 import { orderService } from '../services/orderService';
 import { format } from 'date-fns';
 import toast, { Toaster } from 'react-hot-toast';
 import PaymentDetailsCard from '../components/PaymentDetailsCard';
+import TableFilterHeader from '../components/TableFilterHeader';
 
 const STATUS_COLORS = {
     'Pending': 'bg-amber-100 text-amber-800 border-amber-200',
@@ -34,16 +38,19 @@ const CRM = () => {
     const [orders, setOrders] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
-    const [statusFilter, setStatusFilter] = useState('All');
-    const [cityFilter, setCityFilter] = useState('All');
+    const [statusFilter, setStatusFilter] = useState([]);
+    const [cityFilter, setCityFilter] = useState([]);
+    const [startDate, setStartDate] = useState('');
+    const [endDate, setEndDate] = useState('');
 
     const [cities, setCities] = useState([]);
-    const [rmFilter, setRmFilter] = useState('All');
+    const [rmFilter, setRmFilter] = useState([]);
     const [rms, setRms] = useState([]);
     const [typeFilter, setTypeFilter] = useState('All');
     const [types, setTypes] = useState([]);
     const [selectedOrder, setSelectedOrder] = useState(null);
     const [showModal, setShowModal] = useState(false);
+    const [sortConfig, setSortConfig] = useState({ key: 'order_date', direction: 'desc' });
 
     // Stats State
     const [stats, setStats] = useState({
@@ -113,6 +120,16 @@ const CRM = () => {
         }
     };
 
+    const clearFilters = () => {
+        setSearchTerm('');
+        setCityFilter([]);
+        setRmFilter([]);
+        setTypeFilter('All');
+        setStatusFilter([]);
+        setStartDate('');
+        setEndDate('');
+    };
+
     const filteredOrders = useMemo(() => {
         return orders.filter(order => {
             const matchesSearch =
@@ -120,14 +137,63 @@ const CRM = () => {
                 (order.order_id?.toLowerCase().includes(searchTerm.toLowerCase()) || '') ||
                 (order.site_id?.toLowerCase().includes(searchTerm.toLowerCase()) || '');
 
-            const matchesStatus = statusFilter === 'All' || order.order_status === statusFilter;
-            const matchesCity = cityFilter === 'All' || order.city === cityFilter;
-            const matchesRm = rmFilter === 'All' || order.created_by_user_name === rmFilter;
+            const matchesStatus = statusFilter.length === 0 || statusFilter.includes(order.order_status);
+            const matchesCity = cityFilter.length === 0 || cityFilter.includes(order.city);
+            const matchesRm = rmFilter.length === 0 || rmFilter.includes(order.created_by_user_name);
             const matchesType = typeFilter === 'All' || order.customer_type === typeFilter;
 
-            return matchesSearch && matchesStatus && matchesCity && matchesRm && matchesType;
+            let matchesDate = true;
+            if (startDate || endDate) {
+                const orderDate = new Date(order.order_date);
+                const start = startDate ? new Date(startDate) : null;
+                const end = endDate ? new Date(endDate) : null;
+
+                // Set times to cover full days
+                if (start) start.setHours(0, 0, 0, 0);
+                if (end) end.setHours(23, 59, 59, 999);
+
+                if (start && orderDate < start) matchesDate = false;
+                if (end && orderDate > end) matchesDate = false;
+            }
+
+            return matchesSearch && matchesStatus && matchesCity && matchesRm && matchesType && matchesDate;
         });
-    }, [orders, searchTerm, statusFilter, cityFilter, rmFilter, typeFilter]);
+    }, [orders, searchTerm, statusFilter, cityFilter, rmFilter, typeFilter, startDate, endDate]);
+
+    const sortedOrders = useMemo(() => {
+        let sortableItems = [...filteredOrders];
+        if (sortConfig.key) {
+            sortableItems.sort((a, b) => {
+                let aValue = a[sortConfig.key];
+                let bValue = b[sortConfig.key];
+
+                if (sortConfig.key === 'total_amount') {
+                    aValue = Number(aValue) || 0;
+                    bValue = Number(bValue) || 0;
+                } else if (sortConfig.key === 'order_date') {
+                    aValue = new Date(aValue).getTime();
+                    bValue = new Date(bValue).getTime();
+                }
+
+                if (aValue < bValue) {
+                    return sortConfig.direction === 'asc' ? -1 : 1;
+                }
+                if (aValue > bValue) {
+                    return sortConfig.direction === 'asc' ? 1 : -1;
+                }
+                return 0;
+            });
+        }
+        return sortableItems;
+    }, [filteredOrders, sortConfig]);
+
+    const requestSort = (key) => {
+        let direction = 'asc';
+        if (sortConfig.key === key && sortConfig.direction === 'asc') {
+            direction = 'desc';
+        }
+        setSortConfig({ key, direction });
+    };
 
     // Format Currency
     const formatCurrency = (amount) => {
@@ -137,6 +203,8 @@ const CRM = () => {
             maximumFractionDigits: 0
         }).format(amount);
     };
+
+    const hasActiveFilters = searchTerm || cityFilter.length > 0 || typeFilter !== 'All' || rmFilter.length > 0 || statusFilter.length > 0 || startDate || endDate;
 
     return (
         <div className="p-6 space-y-6 bg-slate-50 min-h-screen">
@@ -188,81 +256,67 @@ const CRM = () => {
             </div>
 
             {/* Filters Bar */}
-            <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col md:flex-row gap-4 items-center justify-between">
-                <div className="flex items-center gap-4 w-full md:w-auto">
-                    <div className="relative flex-1 md:min-w-[300px]">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-                        <input
-                            type="text"
-                            placeholder="Search orders, contractors, or sites..."
-                            className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                        />
-                    </div>
+            {/* Filters Bar */}
+            <div className="bg-white p-3 rounded-xl shadow-sm border border-slate-200 flex flex-col xl:flex-row gap-3 items-center">
+                {/* Search */}
+                <div className="relative w-full xl:w-72">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    <input
+                        type="text"
+                        placeholder="Search orders..."
+                        className="w-full pl-9 pr-4 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all placeholder:text-slate-400"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                    />
                 </div>
 
+                {/* Filters Group */}
+                <div className="flex flex-1 flex-wrap items-center gap-2 w-full xl:justify-end">
 
-
-                <div className="flex items-center gap-3 w-full md:w-auto">
-                    {/* City / Site Filter */}
-                    <div className="relative">
-                        <select
-                            value={cityFilter}
-                            onChange={(e) => setCityFilter(e.target.value)}
-                            className="appearance-none bg-white border border-slate-200 text-slate-700 py-2.5 pl-4 pr-10 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-medium min-w-[150px] shadow-sm cursor-pointer hover:border-slate-300 transition-colors"
-                        >
-                            <option value="All">All Sites</option>
-                            {cities.map(city => (
-                                <option key={city} value={city}>{city}</option>
-                            ))}
-                        </select>
-                        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+                    {/* Date Range Filter */}
+                    <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg p-1 w-full sm:w-auto overflow-x-auto">
+                        <input
+                            type="date"
+                            value={startDate}
+                            onChange={(e) => setStartDate(e.target.value)}
+                            max={endDate}
+                            className="bg-transparent text-slate-700 py-1 px-2 text-sm font-medium focus:outline-none flex-1 sm:flex-none min-w-[120px]"
+                        />
+                        <span className="text-slate-400">-</span>
+                        <input
+                            type="date"
+                            value={endDate}
+                            onChange={(e) => setEndDate(e.target.value)}
+                            min={startDate}
+                            className="bg-transparent text-slate-700 py-1 px-2 text-sm font-medium focus:outline-none flex-1 sm:flex-none min-w-[120px]"
+                        />
                     </div>
 
-                    {/* Customer Type Filter */}
-                    <div className="relative">
+                    {/* Clear Filters Button - Mobile/Desktop Placement */}
+                    {hasActiveFilters && (
+                        <button
+                            onClick={clearFilters}
+                            className="flex items-center gap-1.5 px-3 py-2 text-rose-600 bg-rose-50 border border-rose-100 rounded-lg hover:bg-rose-100 transition-colors text-xs font-medium mr-auto xl:mr-0 order-last xl:order-first"
+                        >
+                            <X size={14} />
+                            Clear
+                        </button>
+                    )}
+
+                    {/* Type Filter */}
+                    <div className="relative flex-1 sm:flex-none w-full sm:w-auto">
                         <select
                             value={typeFilter}
                             onChange={(e) => setTypeFilter(e.target.value)}
-                            className="appearance-none bg-white border border-slate-200 text-slate-700 py-2.5 pl-4 pr-10 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-medium min-w-[150px] shadow-sm cursor-pointer hover:border-slate-300 transition-colors"
+                            className={`appearance-none w-full bg-slate-50 border border-slate-200 text-slate-700 py-2 pl-3 pr-8 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm font-medium cursor-pointer hover:border-slate-300 transition-colors`}
+                            style={{ minWidth: "140px" }}
                         >
                             <option value="All">All Types</option>
-                            {types.map(type => (
-                                <option key={type} value={type}>{type}</option>
+                            {types.map(opt => (
+                                <option key={opt} value={opt}>{opt}</option>
                             ))}
                         </select>
-                        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
-                    </div>
-
-                    {/* RM Filter */}
-                    <div className="relative">
-                        <select
-                            value={rmFilter}
-                            onChange={(e) => setRmFilter(e.target.value)}
-                            className="appearance-none bg-white border border-slate-200 text-slate-700 py-2.5 pl-4 pr-10 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-medium min-w-[150px] shadow-sm cursor-pointer hover:border-slate-300 transition-colors"
-                        >
-                            <option value="All">All RMs</option>
-                            {rms.map(rm => (
-                                <option key={rm} value={rm}>{rm}</option>
-                            ))}
-                        </select>
-                        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
-                    </div>
-
-                    {/* Status Filter */}
-                    <div className="relative">
-                        <select
-                            value={statusFilter}
-                            onChange={(e) => setStatusFilter(e.target.value)}
-                            className="appearance-none bg-white border border-slate-200 text-slate-700 py-2.5 pl-4 pr-10 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-medium min-w-[180px] shadow-sm cursor-pointer hover:border-slate-300 transition-colors"
-                        >
-                            <option value="All">All Orders</option>
-                            <option value="Pending">Pending {stats.pending > 0 ? `(${stats.pending})` : ''}</option>
-                            <option value="Approved">Approved</option>
-                            <option value="Rejected">Rejected</option>
-                        </select>
-                        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+                        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
                     </div>
                 </div>
             </div>
@@ -274,12 +328,53 @@ const CRM = () => {
                         <thead>
                             <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 text-sm font-semibold uppercase tracking-wider">
                                 <th className="p-4 py-3">Order ID</th>
-                                <th className="p-4 py-3">Date</th>
-                                <th className="p-4 py-3">RM</th>
+                                <th
+                                    className="p-4 py-3 cursor-pointer hover:bg-slate-100 transition-colors"
+                                    onClick={() => requestSort('order_date')}
+                                >
+                                    <div className="flex items-center gap-1">
+                                        Date
+                                        {sortConfig.key === 'order_date' && (
+                                            sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />
+                                        )}
+                                    </div>
+                                </th>
+                                <th className="p-4 py-3">
+                                    <TableFilterHeader
+                                        title="RM"
+                                        options={rms}
+                                        selectedValues={rmFilter}
+                                        onChange={setRmFilter}
+                                    />
+                                </th>
                                 <th className="p-4 py-3">Contractor / Site</th>
-                                <th className="p-4 py-3">Location</th>
-                                <th className="p-4 py-3 text-right">Amount</th>
-                                <th className="p-4 py-3 text-center">Status</th>
+                                <th className="p-4 py-3">
+                                    <TableFilterHeader
+                                        title="Location"
+                                        options={cities}
+                                        selectedValues={cityFilter}
+                                        onChange={setCityFilter}
+                                    />
+                                </th>
+                                <th
+                                    className="p-4 py-3 text-right cursor-pointer hover:bg-slate-100 transition-colors"
+                                    onClick={() => requestSort('total_amount')}
+                                >
+                                    <div className="flex items-center justify-end gap-1">
+                                        Amount
+                                        {sortConfig.key === 'total_amount' && (
+                                            sortConfig.direction === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />
+                                        )}
+                                    </div>
+                                </th>
+                                <th className="p-4 py-3 text-center flex justify-center">
+                                    <TableFilterHeader
+                                        title="Status"
+                                        options={['Pending', 'Approved', 'Rejected', 'New']}
+                                        selectedValues={statusFilter}
+                                        onChange={setStatusFilter}
+                                    />
+                                </th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
@@ -292,8 +387,8 @@ const CRM = () => {
                                         </div>
                                     </td>
                                 </tr>
-                            ) : filteredOrders.length > 0 ? (
-                                filteredOrders.map((order) => (
+                            ) : sortedOrders.length > 0 ? (
+                                sortedOrders.map((order) => (
                                     <tr key={order.order_id} className="hover:bg-slate-50/80 transition-colors group">
                                         <td
                                             onClick={() => {
@@ -348,10 +443,10 @@ const CRM = () => {
             {/* Order Details Modal */}
             {
                 showModal && selectedOrder && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-                        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+                    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+                        <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full max-w-5xl h-[95vh] sm:max-h-[90vh] overflow-hidden flex flex-col animate-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200">
                             {/* Modal Header */}
-                            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                            <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                                 <div className="flex items-center gap-4">
                                     <div>
                                         <h2 className="text-xl font-bold text-slate-900">Order Details</h2>
@@ -374,7 +469,7 @@ const CRM = () => {
                             </div>
 
                             {/* Modal Content */}
-                            <div className="flex-1 overflow-y-auto p-6 space-y-8">
+                            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 sm:space-y-8">
 
                                 {/* Key Details Grid */}
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -411,7 +506,7 @@ const CRM = () => {
                                 </div>
 
                                 {/* Products Table */}
-                                <div className="border border-slate-200 rounded-xl overflow-hidden">
+                                <div className="border border-slate-200 rounded-xl overflow-hidden overflow-x-auto">
                                     <div className="bg-slate-50 px-4 py-2 border-b border-slate-200 flex items-center justify-between">
                                         <h3 className="font-semibold text-slate-700 flex items-center gap-2">
                                             <Package size={18} />
@@ -438,7 +533,7 @@ const CRM = () => {
                                                         <td className="px-4 py-2 text-slate-800">{item.product_name}</td>
                                                         <td className="px-4 py-2 text-right text-slate-600">{item.quantity}</td>
                                                         <td className="px-4 py-2 text-right text-slate-600">{formatCurrency(item.unit_price)}</td>
-                                                        <td className="px-4 py-2 text-right text-amber-600 font-medium">{item.reward_points} pts</td>
+                                                        <td className="px-4 py-2 text-right text-blue-600 font-medium">{item.reward_points} pts</td>
                                                         <td className="px-4 py-2 text-right font-medium text-slate-800">
                                                             {formatCurrency((item.quantity || 0) * (item.unit_price || 0))}
                                                         </td>
@@ -460,7 +555,7 @@ const CRM = () => {
                                 />
 
                                 {/* Points Allocation Table */}
-                                <div className="border border-slate-200 rounded-xl overflow-hidden">
+                                <div className="border border-slate-200 rounded-xl overflow-hidden overflow-x-auto">
                                     <div className="bg-slate-50 px-4 py-2 border-b border-slate-200">
                                         <h3 className="font-semibold text-slate-700 flex items-center gap-2">
                                             <CreditCard size={18} />
@@ -487,7 +582,7 @@ const CRM = () => {
                                                             </span>
                                                         </td>
                                                         <td className="px-4 py-2 text-right text-slate-600">...{alloc.phone_last_4}</td>
-                                                        <td className="px-4 py-2 text-right font-bold text-amber-600">+{alloc.allocated_points}</td>
+                                                        <td className="px-4 py-2 text-right font-bold text-blue-600">+{alloc.allocated_points}</td>
                                                     </tr>
                                                 ))
                                             ) : (
@@ -510,7 +605,7 @@ const CRM = () => {
                             </div>
 
                             {/* Modal Footer (Actions) */}
-                            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex items-center justify-end gap-3">
+                            <div className="px-4 py-3 sm:px-6 sm:py-4 border-t border-slate-100 bg-slate-50 flex flex-wrap items-center justify-end gap-3 z-10 safe-area-bottom">
                                 <button
                                     onClick={() => setShowModal(false)}
                                     className="px-4 py-2 text-slate-600 font-medium hover:bg-slate-200 rounded-lg transition-colors"

@@ -20,7 +20,10 @@ export const dashboardService = {
                     payments (
                         paid_amount,
                         due_date,
-                        payment_status
+                        actual_payment_date,
+                        order_amount,
+                        payment_status,
+                        payment_mode
                     )
                 `)
                 .order('created_at', { ascending: false });

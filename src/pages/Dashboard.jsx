@@ -5,7 +5,7 @@ import {
     BarChart, Bar, PieChart, Pie, Cell, Legend, AreaChart, Area
 } from 'recharts';
 import { format, parseISO, isSameDay, getYear, getMonth, getHours } from 'date-fns';
-import { Package, Calendar, MapPin, Users, TrendingUp } from 'lucide-react';
+import { Package, Calendar, MapPin, TrendingUp } from 'lucide-react';
 
 const RADIAN = Math.PI / 180;
 const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, index }) => {
@@ -32,6 +32,7 @@ const Dashboard = () => {
     const [citySalesFilter, setCitySalesFilter] = useState({ month: currentMonth, year: currentYear });
     const [dealValueYear, setDealValueYear] = useState(currentYear);
     const [totalOrdersYear, setTotalOrdersYear] = useState(currentYear);
+    const [paymentCollectionYear, setPaymentCollectionYear] = useState(currentYear);
 
     const [availableYears, setAvailableYears] = useState([]);
 
@@ -63,73 +64,7 @@ const Dashboard = () => {
         fetchData();
     }, []);
 
-    // --- 1. Analytics of User's Order Creation (Amount Wise) with Payment Status ---
-    const userOrderStats = useMemo(() => {
-        const stats = {};
-        allOrders.forEach(order => {
-            const user = order.created_by_user_name || 'Unknown';
-            // Get payment details
-            const payment = (order.payments && order.payments.length > 0) ? order.payments[0] : null;
 
-            const totalAmount = parseFloat(order.total_amount) || 0;
-            const paidAmount = payment ? (parseFloat(payment.paid_amount) || 0) : 0;
-
-            // Calculate outstanding
-            let outstanding = totalAmount - paidAmount;
-            if (outstanding < 0) outstanding = 0;
-
-            // Determine buckets
-            let overdueAmount = 0;
-            let pendingAmount = 0;
-            let partialDueAmount = 0;
-
-            if (outstanding > 0) {
-                const status = order.payment_status || 'Pending';
-                let isOverdue = false;
-
-                // Check Overdue status
-                if (status === 'Overdue') {
-                    isOverdue = true;
-                } else if (payment && payment.due_date) {
-                    const dueDate = parseISO(payment.due_date);
-                    if (new Date() > dueDate) {
-                        isOverdue = true;
-                    }
-                }
-
-                if (isOverdue) {
-                    overdueAmount = outstanding;
-                } else {
-                    // Not overdue, check if it's partially paid or fully pending
-                    if (paidAmount > 0) {
-                        partialDueAmount = outstanding;
-                    } else {
-                        pendingAmount = outstanding; // Fully unpaid and not overdue
-                    }
-                }
-            }
-
-            if (!stats[user]) {
-                stats[user] = {
-                    name: user,
-                    Collected: 0,
-                    PartialDue: 0,
-                    Pending: 0,
-                    Overdue: 0,
-                    total: 0
-                };
-            }
-
-            stats[user].Collected += paidAmount;
-            stats[user].PartialDue += partialDueAmount;
-            stats[user].Pending += pendingAmount;
-            stats[user].Overdue += overdueAmount;
-            stats[user].total += totalAmount;
-        });
-
-        // Sort by total revenue
-        return Object.values(stats).sort((a, b) => b.total - a.total);
-    }, [allOrders]);
 
     // --- 2. No of Orders added this month (Months wise pie-chart) - Filter: Year ---
     const monthlyOrdersData = useMemo(() => {
@@ -228,6 +163,73 @@ const Dashboard = () => {
 
         return data;
     }, [allOrders, dealValueYear]);
+
+    // --- 6. Monthly Payment Collection (Grouped Bar Chart) - Filter: Year ---
+    const monthlyPaymentCollections = useMemo(() => {
+        const data = Array.from({ length: 12 }, (_, i) => ({
+            name: format(new Date(2000, i, 1), 'MMM'),
+            paid: 0,
+            due: 0
+        }));
+
+        allOrders.forEach(order => {
+            const payments = Array.isArray(order.payments) ? order.payments : (order.payments ? [order.payments] : []);
+
+            payments.forEach(payment => {
+                // Paid Amount (grouped by actual_payment_date)
+                if (payment.actual_payment_date) {
+                    const payDate = parseISO(payment.actual_payment_date);
+                    if (getYear(payDate) === parseInt(paymentCollectionYear)) {
+                        data[getMonth(payDate)].paid += (parseFloat(payment.paid_amount) || 0);
+                    }
+                }
+
+                // Due Amount (grouped by due_date)
+                // due_amount = order_amount - paid_amount
+                if (payment.due_date) {
+                    const dueDate = parseISO(payment.due_date);
+                    if (getYear(dueDate) === parseInt(paymentCollectionYear)) {
+                        const orderAmt = parseFloat(payment.order_amount) || parseFloat(order.total_amount) || 0;
+                        const paidAmt = parseFloat(payment.paid_amount) || 0;
+                        const dueAmt = Math.max(0, orderAmt - paidAmt);
+                        data[getMonth(dueDate)].due += dueAmt;
+                    }
+                }
+            });
+        });
+
+        return data;
+    }, [allOrders, paymentCollectionYear]);
+
+    // --- 7. Payment Mode Distribution (Pie Chart) - Filter: Year ---
+    const paymentModeData = useMemo(() => {
+        const modeMap = {};
+
+        allOrders.forEach(order => {
+            const payments = Array.isArray(order.payments) ? order.payments : (order.payments ? [order.payments] : []);
+
+            payments.forEach(payment => {
+                if (payment.actual_payment_date) {
+                    const payDate = parseISO(payment.actual_payment_date);
+                    if (getYear(payDate) === parseInt(paymentCollectionYear)) {
+                        const amount = parseFloat(payment.paid_amount) || 0;
+                        // Normalize mode name
+                        let mode = payment.payment_mode ? payment.payment_mode.trim() : 'Unknown';
+                        // Capitalize first letter
+                        mode = mode.charAt(0).toUpperCase() + mode.slice(1);
+
+                        if (!modeMap[mode]) modeMap[mode] = 0;
+                        modeMap[mode] += amount;
+                    }
+                }
+            });
+        });
+
+        // Convert to array and filter out zero values
+        return Object.entries(modeMap)
+            .map(([name, value]) => ({ name, value }))
+            .sort((a, b) => b.value - a.value);
+    }, [allOrders, paymentCollectionYear]);
 
 
     // COLORS
@@ -395,43 +397,108 @@ const Dashboard = () => {
                 </div>
             </div>
 
-            {/* --- Item 1: User's Order Creation & Payment Status --- */}
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-                    <div>
-                        <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                            <Users className="text-blue-500" size={20} />
-                            User Performance & Payment Status
-                        </h3>
-                        <p className="text-slate-500 text-xs">Total revenue generated by each user, broken down by collection status.</p>
+            {/* --- Payment Analytics Section --- */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+                {/* --- Monthly Payment Collection Chart (Span 2) --- */}
+                <div className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+                        <div>
+                            <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                                <div className="p-1 px-2 bg-indigo-100 rounded text-indigo-600 text-xs font-bold">₹</div>
+                                Payment Collections
+                            </h3>
+                            <p className="text-slate-500 text-xs">Total payment received vs due per month.</p>
+                        </div>
+                        <select
+                            className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-lg p-2 outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                            value={paymentCollectionYear}
+                            onChange={(e) => setPaymentCollectionYear(e.target.value)}
+                        >
+                            {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
+                        </select>
+                    </div>
+                    <div className="h-[300px] w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={monthlyPaymentCollections} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                                <YAxis tick={{ fontSize: 12, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={(val) => `₹${val / 1000}k`} />
+                                <Tooltip
+                                    formatter={(value, name) => [`₹${value.toLocaleString()}`, name]}
+                                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                                    cursor={{ fill: '#eff6ff' }}
+                                />
+                                <Legend verticalAlign="top" height={36} />
+                                <Bar
+                                    dataKey="paid"
+                                    name="Paid Amount"
+                                    fill="#10b981" // Emerald-500
+                                    radius={[4, 4, 0, 0]}
+                                    barSize={20}
+                                />
+                                <Bar
+                                    dataKey="due"
+                                    name="Due Amount"
+                                    fill="#f43f5e" // Rose-500
+                                    radius={[4, 4, 0, 0]}
+                                    barSize={20}
+                                />
+                            </BarChart>
+                        </ResponsiveContainer>
                     </div>
                 </div>
-                <div className="h-[350px] w-full">
-                    <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={userOrderStats} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                            <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                            <YAxis
-                                tick={{ fontSize: 12, fill: '#64748b' }}
-                                axisLine={false}
-                                tickLine={false}
-                                tickFormatter={(val) => `₹${(val / 1000).toFixed(0)}k`}
-                            />
-                            <Tooltip
-                                contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                                cursor={{ fill: '#f8fafc' }}
-                                formatter={(value) => [`₹${value.toLocaleString()}`, '']}
-                            />
-                            <Legend wrapperStyle={{ paddingTop: '20px' }} iconType="circle" />
-                            {/* Stack Order: Collected | Partial Due | Pending | Overdue */}
-                            <Bar dataKey="Collected" stackId="a" fill="#10b981" radius={[0, 0, 4, 4]} barSize={40} name="Collected" />
-                            <Bar dataKey="PartialDue" stackId="a" fill="#8b5cf6" barSize={40} name="Partial Balance" />
-                            <Bar dataKey="Pending" stackId="a" fill="#f59e0b" barSize={40} name="Pending (New)" />
-                            <Bar dataKey="Overdue" stackId="a" fill="#ef4444" radius={[4, 4, 0, 0]} barSize={40} name="Overdue" />
-                        </BarChart>
-                    </ResponsiveContainer>
+
+                {/* --- Payment Mode Distribution (Span 1) --- */}
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex flex-col">
+                    <div className="mb-6">
+                        <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                            <TrendingUp className="text-violet-500" size={20} />
+                            Payment Modes
+                        </h3>
+                        <p className="text-slate-500 text-xs">Revenue share by payment method.</p>
+                    </div>
+                    <div className="flex-1 min-h-[300px]">
+                        {paymentModeData.length > 0 ? (
+                            <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                    <Pie
+                                        data={paymentModeData}
+                                        cx="50%"
+                                        cy="50%"
+                                        innerRadius={60}
+                                        outerRadius={100}
+                                        dataKey="value"
+                                        nameKey="name"
+                                        paddingAngle={5}
+                                    >
+                                        {paymentModeData.map((entry, index) => (
+                                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                        ))}
+                                    </Pie>
+                                    <Tooltip
+                                        formatter={(value) => [`₹${value.toLocaleString()}`, 'Received']}
+                                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                                    />
+                                    <Legend
+                                        layout="horizontal"
+                                        verticalAlign="bottom"
+                                        align="center"
+                                        iconType="circle"
+                                    />
+                                </PieChart>
+                            </ResponsiveContainer>
+                        ) : (
+                            <div className="h-full flex items-center justify-center text-slate-400 text-sm">
+                                No payment data for {paymentCollectionYear}.
+                            </div>
+                        )}
+                    </div>
                 </div>
+
             </div>
+
+
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* --- Item 2: No of Orders added this month (Year Filter) --- */}
