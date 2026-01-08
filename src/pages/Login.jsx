@@ -61,7 +61,7 @@ const Login = () => {
       localStorage.setItem('user', JSON.stringify(userForStore));
       login(userForStore);
 
-      navigate(userForStore.Admin === 'Yes' ? "/" : "/my-profile", { replace: true });
+      navigate("/dashboard", { replace: true });
 
     } catch (err) {
       console.error('Login exception:', err);

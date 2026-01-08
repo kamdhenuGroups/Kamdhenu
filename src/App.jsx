@@ -29,7 +29,7 @@ function App() {
               <Layout />
             </ProtectedRoute>
           }>
-            <Route index element={<Navigate to="/my-profile" replace />} />
+            <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="my-profile" element={<MyProfile />} />
             <Route path="settings" element={<Settings />} />
             <Route path="new-order" element={<NewOrder />} />
