@@ -196,7 +196,7 @@ const CAC = () => {
     const [amount, setAmount] = useState('');
     const [customerStatus, setCustomerStatus] = useState('New');
     const [expenseCategory, setExpenseCategory] = useState('');
-    const [billImage, setBillImage] = useState(null);
+    const [billImages, setBillImages] = useState([]);
     const [date, setDate] = useState('');
 
     // Dropdown State
@@ -287,6 +287,12 @@ const CAC = () => {
                     users (full_name, username, user_id),
                     contractor_data (contractor_name, customer_type)
                 `)
+                .select(`
+                    *,
+                    users (full_name, username, user_id),
+                    contractor_data (contractor_name, customer_type),
+                    cac_bills (*)
+                `)
                 .order('created_at', { ascending: false });
 
             if (error) throw error;
@@ -332,8 +338,15 @@ const CAC = () => {
     // Handlers
     const handleSubmit = async (e) => {
         e.preventDefault();
+
+        // Validation
         if (!selectedContractorId || !amount || !date) {
             toast.error('Please fill in all required fields');
+            return;
+        }
+
+        if (billImages.length === 0) {
+            toast.error('Please upload at least one bill image (Mandatory).');
             return;
         }
 
@@ -344,26 +357,66 @@ const CAC = () => {
 
         setSubmitting(true);
         try {
-            const payload = {
+            // 1. Create CAC Entry
+            const cacPayload = {
                 contractor_id: selectedContractorId,
                 user_id: user.user_id,
                 amount: parseFloat(amount),
                 customer_status: customerStatus,
                 expense_category: expenseCategory,
                 expense_date: date,
-                bill_image_url: billImage ? billImage.name : null
+                // Legacy support: save first image name to bill_image_url
+                bill_image_url: billImages.length > 0 ? billImages[0].name : null
             };
 
-            const { error } = await supabase.from('cac').insert([payload]);
+            const { data: cacData, error: cacError } = await supabase
+                .from('cac')
+                .insert([cacPayload])
+                .select()
+                .single();
 
-            if (error) throw error;
+            if (cacError) throw cacError;
+
+            const cacId = cacData.id;
+
+            // 2. Upload Images and Insert into cac_bills
+            const uploadPromises = billImages.map(async (file) => {
+                const fileExt = file.name.split('.').pop();
+                const fileName = `cac-bills/${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
+
+                // Upload to Storage
+                const { error: uploadError } = await supabase.storage
+                    .from('images') // Using 'images' bucket as seen in MyProfile.jsx
+                    .upload(fileName, file);
+
+                if (uploadError) throw uploadError;
+
+                // Get Public URL
+                const { data: urlData } = supabase.storage
+                    .from('images')
+                    .getPublicUrl(fileName);
+
+                const publicUrl = urlData.publicUrl;
+
+                // Insert into cac_bills
+                return supabase.from('cac_bills').insert([{
+                    cac_id: cacId,
+                    bill_url: publicUrl,
+                    file_name: file.name,
+                    file_type: file.type,
+                    uploaded_by: user.user_id
+                }]);
+            });
+
+            await Promise.all(uploadPromises);
 
             toast.success('CAC entry added successfully!');
+
             // Reset form
             setAmount('');
             setCustomerStatus('New');
             setExpenseCategory('');
-            setBillImage(null);
+            setBillImages([]);
             setSelectedContractorId('');
             setDate('');
             setSearchTerm('');
@@ -604,39 +657,52 @@ const CAC = () => {
                             {/* Section 3: Attachments */}
                             <SectionHeader title="Attachments" icon={ImageIcon} />
 
-                            <InputGroup label="Bill Image">
-                                <label className="flex flex-col items-center justify-center w-full h-32 rounded-xl border-2 border-dashed border-border bg-muted/10 hover:bg-muted/30 transition-colors cursor-pointer group">
-                                    <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                                        {billImage ? (
-                                            <div className="flex items-center gap-2 text-primary">
-                                                <Check className="w-6 h-6" />
-                                                <p className="text-sm font-medium">{billImage.name}</p>
-                                            </div>
-                                        ) : (
-                                            <>
-                                                <ImageIcon className="w-8 h-8 text-muted-foreground/50 group-hover:text-primary/70 mb-2 transition-colors" />
-                                                <p className="text-sm text-muted-foreground">Click to upload bill image</p>
-                                            </>
-                                        )}
-                                    </div>
-                                    <input
-                                        type="file"
-                                        accept="image/*"
-                                        className="hidden"
-                                        onChange={(e) => setBillImage(e.target.files[0])}
-                                    />
-                                </label>
-                                {billImage && (
-                                    <div className="flex justify-end mt-2">
-                                        <button
-                                            type="button"
-                                            onClick={() => setBillImage(null)}
-                                            className="text-xs text-destructive hover:underline flex items-center gap-1"
-                                        >
-                                            <X className="w-3 h-3" /> Remove
-                                        </button>
-                                    </div>
-                                )}
+                            <InputGroup label="Bill Image(s)" required>
+                                <div className="space-y-4">
+                                    <label className="flex flex-col items-center justify-center w-full h-32 rounded-xl border-2 border-dashed border-border bg-muted/10 hover:bg-muted/30 transition-colors cursor-pointer group">
+                                        <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                                            <ImageIcon className="w-8 h-8 text-muted-foreground/50 group-hover:text-primary/70 mb-2 transition-colors" />
+                                            <p className="text-sm text-muted-foreground">Click to upload bill images (Multiple allowed)</p>
+                                        </div>
+                                        <input
+                                            type="file"
+                                            accept="image/*"
+                                            multiple
+                                            className="hidden"
+                                            onChange={(e) => {
+                                                if (e.target.files && e.target.files.length > 0) {
+                                                    setBillImages(prev => [...prev, ...Array.from(e.target.files)]);
+                                                }
+                                            }}
+                                        />
+                                    </label>
+
+                                    {/* File List */}
+                                    {billImages.length > 0 && (
+                                        <div className="space-y-2">
+                                            {billImages.map((file, index) => (
+                                                <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-card border border-border">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="w-8 h-8 rounded bg-primary/10 flex items-center justify-center text-primary">
+                                                            <ImageIcon className="w-4 h-4" />
+                                                        </div>
+                                                        <div className="flex flex-col overflow-hidden">
+                                                            <span className="text-sm font-medium truncate max-w-[200px]">{file.name}</span>
+                                                            <span className="text-xs text-muted-foreground">{(file.size / 1024).toFixed(1)} KB</span>
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setBillImages(prev => prev.filter((_, i) => i !== index))}
+                                                        className="p-1.5 hover:bg-destructive/10 text-muted-foreground hover:text-destructive rounded-lg transition-colors"
+                                                    >
+                                                        <X className="w-4 h-4" />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
                             </InputGroup>
 
                             {/* Footer Action */}
@@ -647,7 +713,7 @@ const CAC = () => {
                                         setAmount('');
                                         setCustomerStatus('New');
                                         setExpenseCategory('');
-                                        setBillImage(null);
+                                        setBillImages([]);
                                         setSelectedContractorId('');
                                         setSelectedContractorId('');
                                         setDate('');
@@ -774,12 +840,29 @@ const CAC = () => {
                                                     </div>
                                                 </td>
                                                 <td className="px-4 py-3 text-xs whitespace-nowrap text-muted-foreground">
-                                                    {entry.bill_image_url ? (
-                                                        <div className="flex items-center gap-1 text-primary cursor-pointer hover:underline">
-                                                            <ImageIcon className="w-3 h-3" />
-                                                            <span>View</span>
+                                                    {entry.cac_bills?.length > 0 ? (
+                                                        <div className="flex flex-col gap-1">
+                                                            {entry.cac_bills.map((bill, index) => (
+                                                                <a
+                                                                    key={bill.id}
+                                                                    href={bill.bill_url}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="flex items-center gap-1 text-primary cursor-pointer hover:underline text-xs"
+                                                                >
+                                                                    <ImageIcon className="w-3 h-3" />
+                                                                    <span>View Bill {index + 1}</span>
+                                                                </a>
+                                                            ))}
                                                         </div>
-                                                    ) : '-'}
+                                                    ) : (
+                                                        entry.bill_image_url ? (
+                                                            <div className="flex items-center gap-1 text-primary cursor-pointer hover:underline">
+                                                                <ImageIcon className="w-3 h-3" />
+                                                                <span>{entry.bill_image_url}</span>
+                                                            </div>
+                                                        ) : '-'
+                                                    )}
                                                 </td>
                                             </tr>
                                         ))}
