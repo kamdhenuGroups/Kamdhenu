@@ -15,7 +15,9 @@ import {
     Save,
     Upload,
     Image as ImageIcon,
-    ExternalLink
+    ExternalLink,
+    ChevronLeft,
+    ChevronRight
 } from 'lucide-react';
 
 const OrderDetails = () => {
@@ -26,13 +28,22 @@ const OrderDetails = () => {
     const [selectedFile, setSelectedFile] = useState(null);
     const [updateLoading, setUpdateLoading] = useState(false);
 
-    useEffect(() => {
-        fetchPayments();
-    }, []);
+    // Pagination state
+    const [currentPage, setCurrentPage] = useState(1);
+    const [totalItems, setTotalItems] = useState(0);
+    const itemsPerPage = 10;
 
-    const fetchPayments = async () => {
+    useEffect(() => {
+        fetchPayments(currentPage);
+    }, [currentPage]);
+
+    const fetchPayments = async (page) => {
+        setLoading(true);
         try {
-            const { data, error } = await supabase
+            const from = (page - 1) * itemsPerPage;
+            const to = from + itemsPerPage - 1;
+
+            const { data, count, error } = await supabase
                 .from('payments')
                 .select(`
                     *,
@@ -45,11 +56,13 @@ const OrderDetails = () => {
                         payment_terms,
                         manual_payment_days
                     )
-                `)
-                .order('created_at', { ascending: false });
+                `, { count: 'exact' })
+                .order('created_at', { ascending: false })
+                .range(from, to);
 
             if (error) throw error;
             setPayments(data || []);
+            setTotalItems(count || 0);
         } catch (error) {
             console.error('Error fetching payments:', error);
             toast.error('Failed to load payment details');
@@ -122,7 +135,11 @@ const OrderDetails = () => {
             setIsEditModalOpen(false);
             setEditingPayment(null);
             setSelectedFile(null);
-            fetchPayments();
+            toast.success('Payment details updated successfully');
+            setIsEditModalOpen(false);
+            setEditingPayment(null);
+            setSelectedFile(null);
+            fetchPayments(currentPage);
         } catch (error) {
             console.error('Error updating payment:', error);
             toast.error('Failed to update payment details: ' + error.message);
@@ -293,10 +310,10 @@ const OrderDetails = () => {
             </div>
 
             {/* Desktop Table View */}
-            <div className="hidden xl:block bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-                <div className="overflow-x-auto">
+            <div className="hidden xl:block bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+                <div className="overflow-auto flex-1">
                     <table className="w-full text-left text-sm">
-                        <thead className="bg-slate-50 border-b border-slate-200">
+                        <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
                             <tr>
                                 <th className="p-4 py-3 font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Order ID</th>
                                 <th className="p-4 py-3 font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">RM</th>
@@ -317,293 +334,355 @@ const OrderDetails = () => {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                            {payments.length === 0 ? (
+                            {payments.length === 0 && (
                                 <tr>
-                                    <td colSpan="11" className="p-12 text-center text-slate-500">
-                                        <div className="flex flex-col items-center justify-center gap-3">
-                                            <div className="p-3 bg-slate-50 rounded-full">
-                                                <CreditCard size={24} className="text-slate-400" />
-                                            </div>
-                                            <p>No payment records found</p>
-                                        </div>
+                                    <td colSpan="16" className="p-4 py-3 text-center text-slate-500 h-[60px]">
+                                        No payment records found
                                     </td>
                                 </tr>
-                            ) : (
-                                payments.map((payment) => (
-                                    <tr key={payment.payment_id} className="hover:bg-slate-50/50 transition-colors">
-                                        <td className="p-4 py-3 whitespace-nowrap">
-                                            <button
-                                                onClick={() => handleEditClick(payment)}
-                                                className="font-medium text-primary hover:text-primary/80 hover:underline transition-colors"
-                                            >
-                                                {payment.order_id}
-                                            </button>
-                                        </td>
-                                        <td className="p-4 py-3 text-slate-600 whitespace-nowrap">
-                                            {payment.orders?.created_by_user_name || '-'}
-                                        </td>
-                                        <td className="p-4 py-3 text-slate-600 whitespace-nowrap">
-                                            <div className="flex items-center gap-2">
-                                                <Calendar size={14} className="text-slate-400" />
-                                                {payment.orders?.order_date ? new Date(payment.orders.order_date).toLocaleDateString('en-GB') : '-'}
-                                            </div>
-                                        </td>
-                                        <td className="p-4 py-3 whitespace-nowrap">
-                                            <div className="font-medium text-slate-800">{payment.orders?.contractor_name || 'Unknown'}</div>
-                                            {payment.orders?.customer_type && (
-                                                <div className="text-xs text-slate-500">{payment.orders.customer_type}</div>
-                                            )}
-                                        </td>
-                                        <td className="p-4 py-3 text-right font-medium text-slate-700 whitespace-nowrap">
-                                            {formatCurrency(payment.order_amount)}
-                                        </td>
-                                        <td className="p-4 py-3 text-right font-medium text-emerald-600 whitespace-nowrap">
-                                            {formatCurrency(payment.paid_amount)}
-                                        </td>
-                                        <td className="p-4 py-3 text-right font-medium text-red-600 whitespace-nowrap">
-                                            {formatCurrency(payment.order_amount - payment.paid_amount)}
-                                        </td>
-                                        <td className="p-4 py-3 text-center whitespace-nowrap">
-                                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border ${getStatusColor(payment.payment_status)}`}>
-                                                <StatusIcon status={payment.payment_status} />
-                                                {payment.payment_status || 'Pending'}
-                                            </span>
-                                        </td>
-
-                                        {/* Due Date & Overdue */}
-                                        <td className="p-4 py-3 text-slate-600 whitespace-nowrap">
-                                            {(() => {
-                                                const dueDate = calculateDueDate(payment.orders?.order_date, payment.orders?.payment_terms, payment.orders?.manual_payment_days);
-                                                return dueDate ? dueDate.toLocaleDateString('en-GB') : '-';
-                                            })()}
-                                        </td>
-                                        <td className="p-4 py-3 text-center whitespace-nowrap">
-                                            {(() => {
-                                                const dueDate = calculateDueDate(payment.orders?.order_date, payment.orders?.payment_terms, payment.orders?.manual_payment_days);
-                                                const overdue = getOverdueDays(dueDate, payment.payment_status);
-                                                return overdue ? (
-                                                    <span className="text-red-600 font-bold bg-red-50 px-2 py-1 rounded">{overdue} Days</span>
-                                                ) : <span className="text-slate-400">-</span>;
-                                            })()}
-                                        </td>
-
-                                        {/* Actual Payment Date */}
-                                        <td className="p-4 py-3 text-slate-600 whitespace-nowrap">
-                                            {payment.actual_payment_date ? new Date(payment.actual_payment_date).toLocaleDateString('en-GB') : '-'}
-                                        </td>
-
-                                        {/* Total Days */}
-                                        <td className="p-4 py-3 text-center whitespace-nowrap">
-                                            {(() => {
-                                                const totalDays = getTotalDays(payment.orders?.order_date, payment.actual_payment_date);
-                                                return totalDays !== null ? (
-                                                    <span className="text-slate-700 font-medium">{totalDays} Days</span>
-                                                ) : '-';
-                                            })()}
-                                        </td>
-                                        <td className="p-4 py-3 text-slate-600 text-xs whitespace-nowrap">
-                                            {payment.payment_mode ? (
-                                                <span className="px-2 py-1 bg-slate-100 rounded text-slate-600 font-medium w-fit block">
-                                                    {payment.payment_mode}
-                                                </span>
-                                            ) : '-'}
-                                        </td>
-                                        <td className="p-4 py-3 text-slate-600 text-xs whitespace-nowrap">
-                                            {payment.transaction_reference ? (
-                                                <span className="text-slate-600">
-                                                    {payment.transaction_reference}
-                                                </span>
-                                            ) : '-'}
-                                        </td>
-                                        <td className="p-4 py-3 whitespace-nowrap">
-                                            {payment.payment_proof ? (
-                                                <a
-                                                    href={payment.payment_proof}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-primary bg-primary/5 hover:bg-primary/10 border border-primary/10 transition-colors"
-                                                >
-                                                    <ImageIcon size={14} />
-                                                    View
-                                                </a>
-                                            ) : (
-                                                <span className="text-slate-400 text-xs">-</span>
-                                            )}
-                                        </td>
-                                        <td className="p-4 py-3 text-slate-500 text-xs min-w-[200px] whitespace-normal">
-                                            {payment.remarks || '-'}
-                                        </td>
-                                    </tr>
-                                ))
                             )}
+
+                            {payments.map((payment) => (
+                                <tr key={payment.payment_id} className="hover:bg-slate-50/50 transition-colors h-[60px]">
+                                    <td className="p-4 py-3 whitespace-nowrap">
+                                        <button
+                                            onClick={() => handleEditClick(payment)}
+                                            className="font-medium text-primary hover:text-primary/80 hover:underline transition-colors"
+                                        >
+                                            {payment.order_id}
+                                        </button>
+                                    </td>
+                                    <td className="p-4 py-3 text-slate-600 whitespace-nowrap">
+                                        {payment.orders?.created_by_user_name || '-'}
+                                    </td>
+                                    <td className="p-4 py-3 text-slate-600 whitespace-nowrap">
+                                        <div className="flex items-center gap-2">
+                                            <Calendar size={14} className="text-slate-400" />
+                                            {payment.orders?.order_date ? new Date(payment.orders.order_date).toLocaleDateString('en-GB') : '-'}
+                                        </div>
+                                    </td>
+                                    <td className="p-4 py-3 whitespace-nowrap">
+                                        <div className="font-medium text-slate-800">{payment.orders?.contractor_name || 'Unknown'}</div>
+                                        {payment.orders?.customer_type && (
+                                            <div className="text-xs text-slate-500">{payment.orders.customer_type}</div>
+                                        )}
+                                    </td>
+                                    <td className="p-4 py-3 text-right font-medium text-slate-700 whitespace-nowrap">
+                                        {formatCurrency(payment.order_amount)}
+                                    </td>
+                                    <td className="p-4 py-3 text-right font-medium text-emerald-600 whitespace-nowrap">
+                                        {formatCurrency(payment.paid_amount)}
+                                    </td>
+                                    <td className="p-4 py-3 text-right font-medium text-red-600 whitespace-nowrap">
+                                        {formatCurrency(payment.order_amount - payment.paid_amount)}
+                                    </td>
+                                    <td className="p-4 py-3 text-center whitespace-nowrap">
+                                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border ${getStatusColor(payment.payment_status)}`}>
+                                            <StatusIcon status={payment.payment_status} />
+                                            {payment.payment_status || 'Pending'}
+                                        </span>
+                                    </td>
+
+                                    {/* Due Date & Overdue */}
+                                    <td className="p-4 py-3 text-slate-600 whitespace-nowrap">
+                                        {(() => {
+                                            const dueDate = calculateDueDate(payment.orders?.order_date, payment.orders?.payment_terms, payment.orders?.manual_payment_days);
+                                            return dueDate ? dueDate.toLocaleDateString('en-GB') : '-';
+                                        })()}
+                                    </td>
+                                    <td className="p-4 py-3 text-center whitespace-nowrap">
+                                        {(() => {
+                                            const dueDate = calculateDueDate(payment.orders?.order_date, payment.orders?.payment_terms, payment.orders?.manual_payment_days);
+                                            const overdue = getOverdueDays(dueDate, payment.payment_status);
+                                            return overdue ? (
+                                                <span className="text-red-600 font-bold bg-red-50 px-2 py-1 rounded">{overdue} Days</span>
+                                            ) : <span className="text-slate-400">-</span>;
+                                        })()}
+                                    </td>
+
+                                    {/* Actual Payment Date */}
+                                    <td className="p-4 py-3 text-slate-600 whitespace-nowrap">
+                                        {payment.actual_payment_date ? new Date(payment.actual_payment_date).toLocaleDateString('en-GB') : '-'}
+                                    </td>
+
+                                    {/* Total Days */}
+                                    <td className="p-4 py-3 text-center whitespace-nowrap">
+                                        {(() => {
+                                            const totalDays = getTotalDays(payment.orders?.order_date, payment.actual_payment_date);
+                                            return totalDays !== null ? (
+                                                <span className="text-slate-700 font-medium">{totalDays} Days</span>
+                                            ) : '-';
+                                        })()}
+                                    </td>
+                                    <td className="p-4 py-3 text-slate-600 text-xs whitespace-nowrap">
+                                        {payment.payment_mode ? (
+                                            <span className="px-2 py-1 bg-slate-100 rounded text-slate-600 font-medium w-fit block">
+                                                {payment.payment_mode}
+                                            </span>
+                                        ) : '-'}
+                                    </td>
+                                    <td className="p-4 py-3 text-slate-600 text-xs whitespace-nowrap">
+                                        {payment.transaction_reference ? (
+                                            <span className="text-slate-600">
+                                                {payment.transaction_reference}
+                                            </span>
+                                        ) : '-'}
+                                    </td>
+                                    <td className="p-4 py-3 whitespace-nowrap">
+                                        {payment.payment_proof ? (
+                                            <a
+                                                href={payment.payment_proof}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-primary bg-primary/5 hover:bg-primary/10 border border-primary/10 transition-colors"
+                                            >
+                                                <ImageIcon size={14} />
+                                                View
+                                            </a>
+                                        ) : (
+                                            <span className="text-slate-400 text-xs">-</span>
+                                        )}
+                                    </td>
+                                    <td className="p-4 py-3 text-slate-500 text-xs min-w-[200px] whitespace-normal">
+                                        {payment.remarks || '-'}
+                                    </td>
+                                </tr>
+                            ))}
+
+                            {/* Empty Rows Filler */}
+                            {Array.from({ length: Math.max(0, itemsPerPage - Math.max(1, payments.length)) + (payments.length === 0 ? 9 : 0) }).slice(0, Math.max(0, itemsPerPage - (payments.length || 1))).map((_, i) => (
+                                <tr key={`empty-${i}`} className="h-[60px]">
+                                    <td colSpan="16" className="p-4 py-3">&nbsp;</td>
+                                </tr>
+                            ))}
                         </tbody>
                     </table>
                 </div>
             </div>
 
-            {/* Edit Payment Modal */}
-            {isEditModalOpen && editingPayment && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
-                    <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl border border-slate-200 flex flex-col max-h-[90vh] overflow-hidden">
-                        <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50/50 shrink-0">
-                            <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
-                                <CreditCard className="text-primary" size={20} />
-                                Update Payment Details
-                            </h3>
-                            <button
-                                onClick={() => setIsEditModalOpen(false)}
-                                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
-                            >
-                                <X size={20} />
-                            </button>
-                        </div>
+            {/* Pagination Controls */}
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 py-4 px-2">
+                <div className="text-sm text-slate-500">
+                    Showing <span className="font-medium">{Math.min((currentPage - 1) * itemsPerPage + 1, totalItems)}</span> to{' '}
+                    <span className="font-medium">{Math.min(currentPage * itemsPerPage, totalItems)}</span> of{' '}
+                    <span className="font-medium">{totalItems}</span> results
+                </div>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                        disabled={currentPage === 1}
+                        className="p-2 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        aria-label="Previous Page"
+                    >
+                        <ChevronLeft size={18} className="text-slate-600" />
+                    </button>
 
-                        <form onSubmit={handleUpdatePayment} className="p-6 space-y-4 overflow-y-auto">
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">Order Amount</label>
-                                    <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 text-slate-500 font-medium">
-                                        {formatCurrency(editingPayment.order_amount)}
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">Current Balance</label>
-                                    <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 text-slate-500 font-medium">
-                                        {formatCurrency(editingPayment.order_amount - (editingPayment.paid_amount || 0))}
-                                    </div>
-                                </div>
+                    <div className="flex items-center gap-1">
+                        {Array.from({ length: Math.min(5, Math.ceil(totalItems / itemsPerPage)) }, (_, i) => {
+                            let pageNum;
+                            const totalPages = Math.ceil(totalItems / itemsPerPage);
+
+                            // Logic to show relevant page numbers
+                            if (totalPages <= 5) {
+                                pageNum = i + 1;
+                            } else if (currentPage <= 3) {
+                                pageNum = i + 1;
+                            } else if (currentPage >= totalPages - 2) {
+                                pageNum = totalPages - 4 + i;
+                            } else {
+                                pageNum = currentPage - 2 + i;
+                            }
+
+                            return (
+                                <button
+                                    key={pageNum}
+                                    onClick={() => setCurrentPage(pageNum)}
+                                    className={`w-9 h-9 rounded-lg text-sm font-medium transition-colors ${currentPage === pageNum
+                                        ? 'bg-primary text-white'
+                                        : 'text-slate-600 hover:bg-slate-50 border border-transparent hover:border-slate-200'
+                                        }`}
+                                >
+                                    {pageNum}
+                                </button>
+                            );
+                        })}
+                    </div>
+
+                    <button
+                        onClick={() => setCurrentPage(prev => Math.min(prev + 1, Math.ceil(totalItems / itemsPerPage)))}
+                        disabled={currentPage >= Math.ceil(totalItems / itemsPerPage)}
+                        className="p-2 rounded-lg border border-slate-200 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        aria-label="Next Page"
+                    >
+                        <ChevronRight size={18} className="text-slate-600" />
+                    </button>
+                </div>
+            </div>
+
+            {/* Edit Payment Modal */}
+            {
+                isEditModalOpen && editingPayment && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+                        <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl border border-slate-200 flex flex-col max-h-[90vh] overflow-hidden">
+                            <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50/50 shrink-0">
+                                <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
+                                    <CreditCard className="text-primary" size={20} />
+                                    Update Payment Details
+                                </h3>
+                                <button
+                                    onClick={() => setIsEditModalOpen(false)}
+                                    className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                                >
+                                    <X size={20} />
+                                </button>
                             </div>
 
-                            <div className="space-y-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">
-                                        Received Amount <span className="text-red-500">*</span>
-                                    </label>
-                                    <div className="relative">
-                                        <DollarSign size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                                        <input
-                                            type="number"
-                                            value={editingPayment.paid_amount || ''}
-                                            onChange={(e) => setEditingPayment({ ...editingPayment, paid_amount: e.target.value })}
-                                            className="w-full pl-9 pr-4 py-2.5 rounded-lg border border-slate-200 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
-                                            placeholder="0.00"
-                                            max={editingPayment.order_amount}
-                                            required
-                                        />
-                                    </div>
-                                </div>
-
+                            <form onSubmit={handleUpdatePayment} className="p-6 space-y-4 overflow-y-auto">
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
-                                        <label className="block text-sm font-medium text-slate-700 mb-1">Payment Mode</label>
-                                        <select
-                                            value={editingPayment.payment_mode || 'Cash'}
-                                            onChange={(e) => setEditingPayment({ ...editingPayment, payment_mode: e.target.value })}
-                                            className="w-full px-4 py-2.5 rounded-lg border border-slate-200 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
-                                        >
-                                            <option value="Cash">Cash</option>
-                                            <option value="Online">Online / UPI</option>
-                                            <option value="Cheque">Cheque</option>
-                                            <option value="Bank Transfer">Bank Transfer</option>
-                                        </select>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Order Amount</label>
+                                        <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 text-slate-500 font-medium">
+                                            {formatCurrency(editingPayment.order_amount)}
+                                        </div>
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-medium text-slate-700 mb-1">Date</label>
-                                        <input
-                                            type="date"
-                                            value={editingPayment.actual_payment_date ? editingPayment.actual_payment_date.split('T')[0] : ''}
-                                            onChange={(e) => setEditingPayment({ ...editingPayment, actual_payment_date: e.target.value })}
-                                            className="w-full px-4 py-2.5 rounded-lg border border-slate-200 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
-                                        />
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Current Balance</label>
+                                        <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 text-slate-500 font-medium">
+                                            {formatCurrency(editingPayment.order_amount - (editingPayment.paid_amount || 0))}
+                                        </div>
                                     </div>
                                 </div>
 
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">Transaction Ref / ID</label>
-                                    <input
-                                        type="text"
-                                        value={editingPayment.transaction_reference || ''}
-                                        onChange={(e) => setEditingPayment({ ...editingPayment, transaction_reference: e.target.value })}
-                                        className="w-full px-4 py-2.5 rounded-lg border border-slate-200 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
-                                        placeholder="e.g. UPI Ref, Cheque No."
-                                    />
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">Payment Proof (Image)</label>
-                                    <div className="relative">
-                                        <input
-                                            type="file"
-                                            accept="image/*"
-                                            onChange={(e) => {
-                                                if (e.target.files && e.target.files[0]) {
-                                                    setSelectedFile(e.target.files[0]);
-                                                }
-                                            }}
-                                            className="hidden"
-                                            id="payment-proof-upload"
-                                        />
-                                        <label
-                                            htmlFor="payment-proof-upload"
-                                            className="flex items-center gap-3 w-full px-4 py-2.5 rounded-lg border border-dashed border-slate-300 hover:border-primary hover:bg-primary/5 cursor-pointer transition-all group"
-                                        >
-                                            <div className="p-2 bg-slate-100 rounded-full group-hover:bg-white transition-colors">
-                                                <Upload size={18} className="text-slate-500 group-hover:text-primary transition-colors" />
-                                            </div>
-                                            <div className="flex-1">
-                                                <p className="text-sm font-medium text-slate-700 group-hover:text-primary truncate">
-                                                    {selectedFile ? selectedFile.name : (editingPayment.payment_proof ? 'Change Proof Image' : 'Upload Payment Proof')}
-                                                </p>
-                                                <p className="text-xs text-slate-400">Click to upload (JPG, PNG)</p>
-                                            </div>
-                                            {editingPayment.payment_proof && !selectedFile && (
-                                                <div className="px-2 py-1 bg-emerald-50 text-emerald-600 text-xs font-medium rounded-md border border-emerald-100">
-                                                    Existing
-                                                </div>
-                                            )}
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">
+                                            Received Amount <span className="text-red-500">*</span>
                                         </label>
+                                        <div className="relative">
+                                            <DollarSign size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                                            <input
+                                                type="number"
+                                                value={editingPayment.paid_amount || ''}
+                                                onChange={(e) => setEditingPayment({ ...editingPayment, paid_amount: e.target.value })}
+                                                className="w-full pl-9 pr-4 py-2.5 rounded-lg border border-slate-200 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
+                                                placeholder="0.00"
+                                                max={editingPayment.order_amount}
+                                                required
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-slate-700 mb-1">Payment Mode</label>
+                                            <select
+                                                value={editingPayment.payment_mode || 'Cash'}
+                                                onChange={(e) => setEditingPayment({ ...editingPayment, payment_mode: e.target.value })}
+                                                className="w-full px-4 py-2.5 rounded-lg border border-slate-200 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
+                                            >
+                                                <option value="Cash">Cash</option>
+                                                <option value="Online">Online / UPI</option>
+                                                <option value="Cheque">Cheque</option>
+                                                <option value="Bank Transfer">Bank Transfer</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-slate-700 mb-1">Date</label>
+                                            <input
+                                                type="date"
+                                                value={editingPayment.actual_payment_date ? editingPayment.actual_payment_date.split('T')[0] : ''}
+                                                onChange={(e) => setEditingPayment({ ...editingPayment, actual_payment_date: e.target.value })}
+                                                className="w-full px-4 py-2.5 rounded-lg border border-slate-200 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Transaction Ref / ID</label>
+                                        <input
+                                            type="text"
+                                            value={editingPayment.transaction_reference || ''}
+                                            onChange={(e) => setEditingPayment({ ...editingPayment, transaction_reference: e.target.value })}
+                                            className="w-full px-4 py-2.5 rounded-lg border border-slate-200 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
+                                            placeholder="e.g. UPI Ref, Cheque No."
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Payment Proof (Image)</label>
+                                        <div className="relative">
+                                            <input
+                                                type="file"
+                                                accept="image/*"
+                                                onChange={(e) => {
+                                                    if (e.target.files && e.target.files[0]) {
+                                                        setSelectedFile(e.target.files[0]);
+                                                    }
+                                                }}
+                                                className="hidden"
+                                                id="payment-proof-upload"
+                                            />
+                                            <label
+                                                htmlFor="payment-proof-upload"
+                                                className="flex items-center gap-3 w-full px-4 py-2.5 rounded-lg border border-dashed border-slate-300 hover:border-primary hover:bg-primary/5 cursor-pointer transition-all group"
+                                            >
+                                                <div className="p-2 bg-slate-100 rounded-full group-hover:bg-white transition-colors">
+                                                    <Upload size={18} className="text-slate-500 group-hover:text-primary transition-colors" />
+                                                </div>
+                                                <div className="flex-1">
+                                                    <p className="text-sm font-medium text-slate-700 group-hover:text-primary truncate">
+                                                        {selectedFile ? selectedFile.name : (editingPayment.payment_proof ? 'Change Proof Image' : 'Upload Payment Proof')}
+                                                    </p>
+                                                    <p className="text-xs text-slate-400">Click to upload (JPG, PNG)</p>
+                                                </div>
+                                                {editingPayment.payment_proof && !selectedFile && (
+                                                    <div className="px-2 py-1 bg-emerald-50 text-emerald-600 text-xs font-medium rounded-md border border-emerald-100">
+                                                        Existing
+                                                    </div>
+                                                )}
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">Remarks</label>
+                                        <textarea
+                                            value={editingPayment.remarks || ''}
+                                            onChange={(e) => setEditingPayment({ ...editingPayment, remarks: e.target.value })}
+                                            className="w-full px-4 py-2.5 rounded-lg border border-slate-200 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all resize-none"
+                                            rows="2"
+                                            placeholder="Add any notes here..."
+                                        />
                                     </div>
                                 </div>
 
-                                <div>
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">Remarks</label>
-                                    <textarea
-                                        value={editingPayment.remarks || ''}
-                                        onChange={(e) => setEditingPayment({ ...editingPayment, remarks: e.target.value })}
-                                        className="w-full px-4 py-2.5 rounded-lg border border-slate-200 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all resize-none"
-                                        rows="2"
-                                        placeholder="Add any notes here..."
-                                    />
+                                <div className="flex gap-3 pt-4 border-t border-slate-100 mt-6">
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsEditModalOpen(false)}
+                                        className="flex-1 px-4 py-2.5 rounded-lg border border-slate-200 text-slate-700 font-medium hover:bg-slate-50 transition-colors"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        disabled={updateLoading}
+                                        className="flex-1 px-4 py-2.5 rounded-lg bg-primary text-white font-medium hover:bg-primary/90 transition-colors flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
+                                    >
+                                        {updateLoading ? (
+                                            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                        ) : (
+                                            <>
+                                                <Save size={18} />
+                                                Update Payment
+                                            </>
+                                        )}
+                                    </button>
                                 </div>
-                            </div>
-
-                            <div className="flex gap-3 pt-4 border-t border-slate-100 mt-6">
-                                <button
-                                    type="button"
-                                    onClick={() => setIsEditModalOpen(false)}
-                                    className="flex-1 px-4 py-2.5 rounded-lg border border-slate-200 text-slate-700 font-medium hover:bg-slate-50 transition-colors"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={updateLoading}
-                                    className="flex-1 px-4 py-2.5 rounded-lg bg-primary text-white font-medium hover:bg-primary/90 transition-colors flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
-                                >
-                                    {updateLoading ? (
-                                        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                    ) : (
-                                        <>
-                                            <Save size={18} />
-                                            Update Payment
-                                        </>
-                                    )}
-                                </button>
-                            </div>
-                        </form>
+                            </form>
+                        </div>
                     </div>
-                </div>
-            )
+                )
             }
         </div >
     );
