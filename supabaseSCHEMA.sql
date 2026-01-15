@@ -8,9 +8,9 @@ CREATE TABLE public.cac (
   amount numeric NOT NULL CHECK (amount > 0::numeric),
   reimbursed_amount numeric NOT NULL DEFAULT 0 CHECK (reimbursed_amount >= 0::numeric),
   reimbursement_status text NOT NULL DEFAULT 'Pending'::text CHECK (reimbursement_status = ANY (ARRAY['Pending'::text, 'Partial'::text, 'Reimbursed'::text])),
-  customer_status text NOT NULL CHECK (customer_status = ANY (ARRAY['Existing'::text, 'New'::text])),
+
   expense_category text,
-  bill_image_url text,
+
   expense_date date NOT NULL,
   last_reimbursed_at timestamp with time zone,
   reimbursed_at timestamp with time zone,
@@ -40,6 +40,7 @@ CREATE TABLE public.contractor_data (
   customer_type text NOT NULL,
   state text,
   city text,
+  mistry_name text,
   CONSTRAINT contractor_data_pkey PRIMARY KEY (contractor_id)
 );
 CREATE TABLE public.customers (

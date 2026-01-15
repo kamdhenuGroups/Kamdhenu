@@ -33,6 +33,7 @@ const ALL_PAGES = [
     { id: 'add-customers', label: 'Add Customers' },
     { id: 'cac', label: 'CAC' },
     { id: 'add-sites', label: 'Add Sites' },
+    { id: 'add-contractors', label: 'Add Contractors' },
 ];
 
 const DEFAULT_USER_PAGES = ['my-profile'];

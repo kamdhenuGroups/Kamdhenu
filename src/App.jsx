@@ -15,6 +15,7 @@ import AddCustomers from './pages/AddCustomers';
 import CAC from './pages/CAC';
 import AddSites from './pages/AddSites';
 import CreateOrder from './pages/CreateOrder';
+import AddContractors from './pages/AddContractors';
 
 
 
@@ -45,6 +46,7 @@ function App() {
             <Route path="cac" element={<CAC />} />
             <Route path="add-sites" element={<AddSites />} />
             <Route path="create-order" element={<CreateOrder />} />
+            <Route path="add-contractors" element={<AddContractors />} />
 
           </Route>
 

@@ -174,11 +174,8 @@ const SearchableInput = ({ options = [], onSelect, ...props }) => {
 };
 
 const EXPENSE_CATEGORIES = [
-    'Travel Expense',
-    'Food & Refreshments',
-    'Site Visit Expense',
-    'Accommodation (Hotel / Stay)',
-    'Client Meeting Expense'
+    'CAC (On-Boarding)',
+    'Maintenance Expense'
 ];
 
 const CAC = () => {
@@ -194,7 +191,6 @@ const CAC = () => {
     // Form State
     const [selectedContractorId, setSelectedContractorId] = useState('');
     const [amount, setAmount] = useState('');
-    const [customerStatus, setCustomerStatus] = useState('New');
     const [expenseCategory, setExpenseCategory] = useState('');
     const [billImages, setBillImages] = useState([]);
     const [date, setDate] = useState('');
@@ -207,6 +203,9 @@ const CAC = () => {
     // Status Tab Search State
     const [statusSearchTerm, setStatusSearchTerm] = useState('');
     const dateInputRef = useRef(null);
+
+    // Remarks State
+    const [remarks, setRemarks] = useState('');
 
     // Load Data
     useEffect(() => {
@@ -280,13 +279,8 @@ const CAC = () => {
     const fetchCacEntries = async () => {
         setStatusLoading(true);
         try {
-            const { data, error } = await supabase
+            let query = supabase
                 .from('cac')
-                .select(`
-                    *,
-                    users (full_name, username, user_id),
-                    contractor_data (contractor_name, customer_type)
-                `)
                 .select(`
                     *,
                     users (full_name, username, user_id),
@@ -294,6 +288,17 @@ const CAC = () => {
                     cac_bills (*)
                 `)
                 .order('created_at', { ascending: false });
+
+            // If NOT admin, filter by user_id
+            if (user) {
+                const isAdmin = (user.role && user.role.toLowerCase() === 'admin') || user.Admin === 'Yes';
+
+                if (!isAdmin) {
+                    query = query.eq('user_id', user.user_id);
+                }
+            }
+
+            const { data, error } = await query;
 
             if (error) throw error;
             setCacEntries(data || []);
@@ -340,7 +345,7 @@ const CAC = () => {
         e.preventDefault();
 
         // Validation
-        if (!selectedContractorId || !amount || !date) {
+        if (!selectedContractorId || !amount || !date || !remarks) {
             toast.error('Please fill in all required fields');
             return;
         }
@@ -362,11 +367,10 @@ const CAC = () => {
                 contractor_id: selectedContractorId,
                 user_id: user.user_id,
                 amount: parseFloat(amount),
-                customer_status: customerStatus,
+
                 expense_category: expenseCategory,
                 expense_date: date,
-                // Legacy support: save first image name to bill_image_url
-                bill_image_url: billImages.length > 0 ? billImages[0].name : null
+                remarks: remarks,
             };
 
             const { data: cacData, error: cacError } = await supabase
@@ -414,11 +418,11 @@ const CAC = () => {
 
             // Reset form
             setAmount('');
-            setCustomerStatus('New');
             setExpenseCategory('');
             setBillImages([]);
             setSelectedContractorId('');
             setDate('');
+            setRemarks('');
             setSearchTerm('');
             setIsDropdownOpen(false);
 
@@ -612,8 +616,8 @@ const CAC = () => {
                                             ₹
                                         </div>
                                         <TextInput
-                                            type="number"
-                                            step="1"
+                                            type="text"
+                                            inputMode="numeric"
                                             value={amount}
                                             onChange={(e) => {
                                                 const val = e.target.value;
@@ -643,14 +647,21 @@ const CAC = () => {
                                     </div>
                                 </InputGroup>
 
-                                <InputGroup label="Customer Status" required>
-                                    <SelectInput
-                                        value={customerStatus}
-                                        onChange={(e) => setCustomerStatus(e.target.value)}
-                                    >
-                                        <option value="New">New Customer</option>
-                                        <option value="Existing">Existing Customer</option>
-                                    </SelectInput>
+
+                            </div>
+
+                            <div className="mb-6">
+                                <InputGroup label="Remarks" required>
+                                    <div className="relative">
+                                        <FileText className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground z-10" />
+                                        <TextInput
+                                            type="text"
+                                            value={remarks}
+                                            onChange={(e) => setRemarks(e.target.value)}
+                                            className="pl-9"
+                                            placeholder="Enter any remarks..."
+                                        />
+                                    </div>
                                 </InputGroup>
                             </div>
 
@@ -711,13 +722,11 @@ const CAC = () => {
                                     type="button"
                                     onClick={() => {
                                         setAmount('');
-                                        setCustomerStatus('New');
                                         setExpenseCategory('');
                                         setBillImages([]);
                                         setSelectedContractorId('');
-                                        setSelectedContractorId('');
                                         setDate('');
-                                        setSearchTerm('');
+                                        setRemarks('');
                                         setSearchTerm('');
                                         setIsDropdownOpen(false);
                                     }}
@@ -777,7 +786,7 @@ const CAC = () => {
                                             <th className="px-4 py-3 whitespace-nowrap">Influencer Name</th>
                                             <th className="px-4 py-3 whitespace-nowrap">Amount (₹)</th>
                                             <th className="px-4 py-3 whitespace-nowrap">Exp. Category</th>
-                                            <th className="px-4 py-3 whitespace-nowrap">Customer Status</th>
+
                                             <th className="px-4 py-3 whitespace-nowrap">Reimbursement Status</th>
                                             <th className="px-4 py-3 whitespace-nowrap">Reimbursed Amt.</th>
                                             <th className="px-4 py-3 whitespace-nowrap">Attachment</th>
@@ -813,14 +822,7 @@ const CAC = () => {
                                                         </span>
                                                     ) : '-'}
                                                 </td>
-                                                <td className="px-4 py-3 text-xs whitespace-nowrap">
-                                                    <span className={`px-2 py-0.5 rounded border ${entry.customer_status === 'New'
-                                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
-                                                        : 'bg-amber-50 text-amber-700 border-amber-100'
-                                                        }`}>
-                                                        {entry.customer_status}
-                                                    </span>
-                                                </td>
+
                                                 <td className="px-4 py-3 text-xs whitespace-nowrap">
                                                     <span className={`px-2 py-0.5 rounded border ${entry.reimbursement_status === 'Pending'
                                                         ? 'bg-yellow-50 text-yellow-700 border-yellow-100'
@@ -855,14 +857,7 @@ const CAC = () => {
                                                                 </a>
                                                             ))}
                                                         </div>
-                                                    ) : (
-                                                        entry.bill_image_url ? (
-                                                            <div className="flex items-center gap-1 text-primary cursor-pointer hover:underline">
-                                                                <ImageIcon className="w-3 h-3" />
-                                                                <span>{entry.bill_image_url}</span>
-                                                            </div>
-                                                        ) : '-'
-                                                    )}
+                                                    ) : '-'}
                                                 </td>
                                             </tr>
                                         ))}
