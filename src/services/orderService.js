@@ -6,7 +6,8 @@ export const CUSTOMER_TYPES = [
     'Site Supervisor',
     'Retailer',
     'Distributor',
-    'Mistry'
+    'Mistry',
+    'Customer'
 ];
 
 export const POINT_ROLES = [
@@ -43,7 +44,7 @@ export const orderService = {
         const {
             orderDate, contractorName, customerType, customerPhone, items,
             notes, challanName, sitePoc, deliveryAddress,
-            pointRole, paymentTerms, manualPaymentDays, logistics,
+            paymentTerms, manualPaymentDays, logistics,
             state, city, orderId, contractorId, siteId, nickname, mistryName,
             pointsAllocations
         } = formData;
@@ -66,7 +67,7 @@ export const orderService = {
             challan_reference: challanName,
             site_contact_number: sitePoc,
             delivery_address: deliveryAddress,
-            point_of_contact_role: pointRole,
+
             payment_terms: paymentTerms,
             manual_payment_days: manualPaymentDays ? parseInt(manualPaymentDays) : null,
             logistics_mode: logistics,
@@ -118,7 +119,7 @@ export const orderService = {
                 city: payload.city,
                 delivery_address: payload.delivery_address,
                 total_amount: payload.total_amount,
-                point_of_contact_role: payload.point_of_contact_role, // Renamed from point_role
+
                 logistics_mode: payload.logistics_mode, // Renamed from logistics_option
                 payment_terms: payload.payment_terms,
                 manual_payment_days: payload.manual_payment_days,
@@ -310,7 +311,7 @@ export const orderService = {
         try {
             const { data, error } = await supabase
                 .from('orders')
-                .select('contractor_name, customer_phone, customer_type, nickname, mistry_name, contractor_id, site_contact_number, delivery_address, point_of_contact_role, payment_terms, manual_payment_days, logistics_mode, state, city, challan_reference')
+                .select('contractor_name, customer_phone, customer_type, nickname, mistry_name, contractor_id, site_contact_number, delivery_address, payment_terms, manual_payment_days, logistics_mode, state, city, challan_reference')
                 .order('created_at', { ascending: false });
 
             if (error) throw error;
@@ -332,6 +333,44 @@ export const orderService = {
             console.error('Error fetching contractors:', error);
             return { data: [], error };
         }
+    },
+
+    // Fetch contractors from master table (contractor_data)
+    getContractorData: async () => {
+        try {
+            const { data, error } = await supabase
+                .from('contractor_data')
+                .select('*')
+                .order('contractor_name', { ascending: true });
+
+            if (error) throw error;
+            return { data, error: null };
+        } catch (error) {
+            console.error('Error fetching contractor data:', error);
+            return { data: [], error };
+        }
+    },
+
+    // Helper to determine customer type from ID prefix
+    getCustomerTypeFromId: (contractorId) => {
+        if (!contractorId) return '';
+
+        // Extract prefix (assuming strictly at start/delimited or just part of string)
+        // Adjusting regex/logic to match user requirement:
+        // C = Contractor, IA = Interior/Architect, SS = Site Supervisor, R = Retailer ,D = Distributor, MI = Mistri
+
+        const upperId = contractorId.toUpperCase();
+
+        // Check for prefixes followed by slash (common pattern in this app e.g. C/...)
+        if (upperId.startsWith('C/') || upperId.startsWith('C-')) return 'Contractor';
+        if (upperId.startsWith('IA/') || upperId.startsWith('IA-')) return 'Interiors/Architect';
+        if (upperId.startsWith('SS/') || upperId.startsWith('SS-')) return 'Site Supervisor';
+        if (upperId.startsWith('R/') || upperId.startsWith('R-')) return 'Retailer';
+        if (upperId.startsWith('D/') || upperId.startsWith('D-')) return 'Distributor';
+        if (upperId.startsWith('MI/') || upperId.startsWith('MI-')) return 'Mistry';
+        if (upperId.startsWith('CU/') || upperId.startsWith('CU-')) return 'Customer';
+
+        return '';
     },
 
     // Get unique points beneficiaries
@@ -523,6 +562,7 @@ export const idGenerator = {
         else if (customerType === 'Mistry') typePrefix = 'Mi';
         else if (customerType === 'Retailer') typePrefix = 'R';
         else if (customerType === 'Distributor') typePrefix = 'D';
+        else if (customerType === 'Customer') typePrefix = 'CU';
 
         // Normalize text to Uppercase for consistency and uniqueness checks
         let normContractorName = contractorName.toUpperCase();

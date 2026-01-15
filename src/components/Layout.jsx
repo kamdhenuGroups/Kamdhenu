@@ -5,7 +5,7 @@ import Header from './Header';
 
 const Layout = () => {
   const location = useLocation();
-  const isFixedPage = location.pathname.includes('settings');
+  const isFixedPage = false; // location.pathname.includes('settings');
 
   return (
     <div className="flex h-screen bg-gray-50 font-sans text-slate-900 selection:bg-primary/20">

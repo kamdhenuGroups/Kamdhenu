@@ -16,6 +16,7 @@ import { supabase } from '../supabase';
 import toast from 'react-hot-toast';
 import useAuthStore from '../store/authStore';
 
+
 // Constants moved outside component to prevent re-creation
 const ITEMS_PER_PAGE = 6;
 
@@ -27,6 +28,9 @@ const ALL_PAGES = [
     { id: 'crm', label: 'CRM' },
     { id: 'order-details', label: 'Order Details' },
     { id: 'dashboard', label: 'Dashboard' },
+    { id: 'add-customers', label: 'Add Customers' },
+    { id: 'cac', label: 'CAC' },
+    { id: 'add-sites', label: 'Add Sites' },
 ];
 
 const DEFAULT_USER_PAGES = ['my-profile'];
@@ -54,11 +58,17 @@ const Settings = () => {
 
     // State Management
     const [users, setUsers] = useState([]);
+    const [contractors, setContractors] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingUser, setEditingUser] = useState(null);
     const [uploading, setUploading] = useState(false);
+
+    // Contractor Visibility Search States
+    const [contractorSearchTerm, setContractorSearchTerm] = useState('');
+    const [customerTypeFilter, setCustomerTypeFilter] = useState('All');
+    const [userAccessSearchTerm, setUserAccessSearchTerm] = useState('');
 
     // Pagination & Filter
     const [selectedDepartment, setSelectedDepartment] = useState('All');
@@ -67,6 +77,7 @@ const Settings = () => {
     // Form & Errors
     const [formData, setFormData] = useState(DEFAULT_FORM_DATA);
     const [errors, setErrors] = useState({});
+    const [activeTab, setActiveTab] = useState('Manage Users');
 
     // Fetch Users on Mount
     useEffect(() => {
@@ -77,6 +88,13 @@ const Settings = () => {
     useEffect(() => {
         setCurrentPage(1);
     }, [searchTerm, selectedDepartment]);
+
+    // Fetch Contractors when tab is active
+    useEffect(() => {
+        if (activeTab === 'Contractor Visibility' && contractors.length === 0) {
+            fetchContractors();
+        }
+    }, [activeTab]);
 
     const fetchUsers = async () => {
         setLoading(true);
@@ -96,10 +114,179 @@ const Settings = () => {
         }
     };
 
+    const fetchContractors = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('contractor_data')
+                .select('contractor_id, contractor_name, nickname, city, customer_type')
+                .order('contractor_name', { ascending: true });
+
+            if (error) throw error;
+            setContractors(data || []);
+        } catch (error) {
+            console.error('Error fetching contractors:', error);
+            toast.error('Failed to fetch contractors');
+        }
+    };
+
     const resetForm = () => {
         setFormData(DEFAULT_FORM_DATA);
         setEditingUser(null);
         setErrors({});
+    };
+
+    // Filtered Contractors for Visibility Tab
+    const filteredContractors = useMemo(() => {
+        let result = contractors;
+
+        if (customerTypeFilter !== 'All') {
+            result = result.filter(c => c.customer_type === customerTypeFilter);
+        }
+
+        if (contractorSearchTerm) {
+            const lowerTerm = contractorSearchTerm.toLowerCase();
+            result = result.filter(c =>
+                c.contractor_name?.toLowerCase().includes(lowerTerm) ||
+                c.contractor_id?.toString().toLowerCase().includes(lowerTerm) ||
+                c.nickname?.toLowerCase().includes(lowerTerm) ||
+                c.city?.toLowerCase().includes(lowerTerm)
+            );
+        }
+        return result;
+    }, [contractors, contractorSearchTerm, customerTypeFilter]);
+
+    // Filtered Users for Visibility Tab
+    const filteredAccessUsers = useMemo(() => {
+        if (!userAccessSearchTerm) return users;
+        const lowerTerm = userAccessSearchTerm.toLowerCase();
+        return users.filter(u =>
+            u.full_name?.toLowerCase().includes(lowerTerm) ||
+            u.user_id?.toString().toLowerCase().includes(lowerTerm) ||
+            u.role?.toLowerCase().includes(lowerTerm)
+        );
+    }, [users, userAccessSearchTerm]);
+
+    // ------------------------------------------------------------------
+    // Contractor Visibility Logic
+    // ------------------------------------------------------------------
+    const [expandedUserId, setExpandedUserId] = useState(null);
+    const [userAssignments, setUserAssignments] = useState({}); // { userId: [contractor_id, ...] }
+    const [processingAssignment, setProcessingAssignment] = useState(false);
+
+    const fetchAssignmentsForUser = async (userId) => {
+        try {
+            const { data, error } = await supabase
+                .from('user_contractor_access')
+                .select('contractor_id')
+                .eq('user_id', userId);
+
+            if (error) throw error;
+
+            const assignedIds = data.map(d => d.contractor_id);
+            setUserAssignments(prev => ({
+                ...prev,
+                [userId]: assignedIds
+            }));
+        } catch (error) {
+            console.error('Error fetching assignments:', error);
+            toast.error('Failed to load assignments');
+        }
+    };
+
+    const toggleUserExpansion = (userId) => {
+        if (expandedUserId === userId) {
+            setExpandedUserId(null);
+        } else {
+            setExpandedUserId(userId);
+            if (!userAssignments[userId]) {
+                fetchAssignmentsForUser(userId);
+            }
+        }
+    };
+
+    const handleDragStart = (e, contractorId) => {
+        e.dataTransfer.setData('contractor_id', contractorId);
+        e.dataTransfer.effectAllowed = 'copy';
+    };
+
+    const handleDragOver = (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+    };
+
+    const handleDropOnUser = async (e, targetUserId) => {
+        e.preventDefault();
+        if (processingAssignment) return;
+
+        const contractorId = e.dataTransfer.getData('contractor_id');
+        if (!contractorId) return;
+
+        const currentAssignments = userAssignments[targetUserId] || [];
+        if (currentAssignments.includes(contractorId)) {
+            toast('Contractor already assigned to this user', { icon: 'ℹ️' });
+            return;
+        }
+
+        // Optimistic Update
+        const previousAssignments = { ...userAssignments };
+        setUserAssignments(prev => ({
+            ...prev,
+            [targetUserId]: [...(prev[targetUserId] || []), contractorId]
+        }));
+
+        // Temporarily expand to show the new addition
+        setExpandedUserId(targetUserId);
+
+        setProcessingAssignment(true);
+        try {
+            const { error } = await supabase
+                .from('user_contractor_access')
+                .insert([{ user_id: targetUserId, contractor_id: contractorId }]);
+
+            if (error) {
+                // Check uniqueness constraint violation explicitly just in case
+                if (error.code === '23505') {
+                    toast('Contractor already assigned');
+                } else {
+                    throw error;
+                }
+                // Revert on error
+                setUserAssignments(previousAssignments);
+            } else {
+                toast.success('Access granted successfully');
+            }
+        } catch (error) {
+            console.error('Assignment error:', error);
+            toast.error('Failed to assign contractor');
+            setUserAssignments(previousAssignments);
+        } finally {
+            setProcessingAssignment(false);
+        }
+    };
+
+    const removeAssignment = async (userId, contractorId) => {
+        if (!confirm('Are you sure you want to revoke access?')) return;
+
+        // Optimistic Update
+        const previousAssignments = { ...userAssignments };
+        setUserAssignments(prev => ({
+            ...prev,
+            [userId]: prev[userId].filter(id => id !== contractorId)
+        }));
+
+        try {
+            const { error } = await supabase
+                .from('user_contractor_access')
+                .delete()
+                .match({ user_id: userId, contractor_id: contractorId });
+
+            if (error) throw error;
+            toast.success('Access revoked');
+        } catch (error) {
+            console.error('Revoke error:', error);
+            toast.error('Failed to revoke access');
+            setUserAssignments(previousAssignments);
+        }
     };
 
     const handleOpenModal = (user = null) => {
@@ -389,276 +576,478 @@ const Settings = () => {
     };
 
     return (
-        <div className="h-full flex flex-col gap-4 overflow-hidden">
+        <div className="flex flex-col gap-4 pb-6">
             {/* Header */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 shrink-0 mb-2">
-                <div>
-                    <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">Settings</h1>
-                    <p className="text-slate-500 mt-1 text-sm">Manage system users, teams, and access permissions.</p>
-                </div>
+            <div>
+                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">Settings</h1>
+                <p className="text-slate-500 mt-1 text-sm">Manage system users, teams, and access permissions.</p>
+            </div>
 
-                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-                    <div className="hidden xl:flex items-center gap-6">
-                        <StatItem label="Total Users" value={users.length} />
-                        <div className="w-px h-8 bg-slate-200"></div>
-                        <StatItem
-                            label="Admins"
-                            value={users.filter(u => u.role?.toLowerCase() === 'admin').length}
-                        />
+            {/* Tabs */}
+            <div className="flex items-center gap-6 border-b border-slate-200 mb-2">
+                <button
+                    onClick={() => setActiveTab('Manage Users')}
+                    className={`pb-3 text-sm font-medium transition-all ${activeTab === 'Manage Users' ? 'text-primary border-b-2 border-primary translate-y-[1px]' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                    Manage Users
+                </button>
+                <button
+                    onClick={() => setActiveTab('Contractor Visibility')}
+                    className={`pb-3 text-sm font-medium transition-all ${activeTab === 'Contractor Visibility' ? 'text-primary border-b-2 border-primary translate-y-[1px]' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                    Contractor Visibility
+                </button>
+            </div>
+
+            {activeTab === 'Manage Users' && (
+                <div className="flex flex-col gap-4">
+                    <div className="flex flex-col md:flex-row md:items-center justify-end gap-4 shrink-0 mb-2">
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                            <div className="hidden xl:flex items-center gap-6">
+                                <StatItem label="Total Users" value={users.length} />
+                                <div className="w-px h-8 bg-slate-200"></div>
+                                <StatItem
+                                    label="Admins"
+                                    value={users.filter(u => u.role?.toLowerCase() === 'admin').length}
+                                />
+                            </div>
+
+                            {!loading && (
+                                <button
+                                    onClick={() => handleOpenModal()}
+                                    className="flex items-center justify-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors shadow-sm font-medium"
+                                >
+                                    <Plus size={20} />
+                                    <span>Add User</span>
+                                </button>
+                            )}
+                        </div>
                     </div>
 
-                    {!loading && (
-                        <button
-                            onClick={() => handleOpenModal()}
-                            className="flex items-center justify-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors shadow-sm font-medium"
-                        >
-                            <Plus size={20} />
-                            <span>Add User</span>
-                        </button>
+                    {/* Mobile View (Cards) */}
+                    <div className="md:hidden space-y-3">
+                        {loading ? (
+                            <div className="text-center py-10 text-slate-500">Loading users...</div>
+                        ) : currentItems.length === 0 ? (
+                            <div className="text-center py-10 text-slate-500">No users found matching your search.</div>
+                        ) : (
+                            currentItems.map((user) => (
+                                <MobileUserCard
+                                    key={user.user_id}
+                                    user={user}
+                                    onEdit={() => handleOpenModal(user)}
+                                />
+                            ))
+                        )}
+                    </div>
+
+                    {/* Desktop View (Table) */}
+                    <div className="hidden md:flex bg-white rounded-2xl shadow-sm border border-slate-200/60 flex-col">
+                        <div className="overflow-x-auto custom-scrollbar">
+                            <table className="w-full text-left border-collapse">
+                                <thead>
+                                    <tr className="bg-slate-50/50 border-b border-slate-100 sticky top-0 z-10 backdrop-blur-md">
+                                        <HeaderCell>User Details</HeaderCell>
+                                        <HeaderCell>Role & Designation</HeaderCell>
+                                        <HeaderCell>Department</HeaderCell>
+                                        <HeaderCell>Status</HeaderCell>
+                                        <HeaderCell align="right">Actions</HeaderCell>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {loading ? (
+                                        <EmptyRow message="Loading users..." />
+                                    ) : currentItems.length === 0 ? (
+                                        <EmptyRow message="No users found matching your search." />
+                                    ) : (
+                                        currentItems.map((user) => (
+                                            <UserRow
+                                                key={user.user_id}
+                                                user={user}
+                                                onEdit={() => handleOpenModal(user)}
+                                            />
+                                        ))
+                                    )}
+                                    {/* Spacer rows */}
+                                    {Array.from({ length: Math.max(0, ITEMS_PER_PAGE - currentItems.length) }).map((_, i) => (
+                                        <tr key={`empty-${i}`}><td colSpan="5" className="h-16"></td></tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        {/* Desktop Pagination - Integrated in Card */}
+                        {!loading && filteredUsers.length > 0 && (
+                            <Pagination
+                                currentPage={currentPage}
+                                totalPages={totalPages}
+                                totalItems={filteredUsers.length}
+                                startIndex={(currentPage - 1) * ITEMS_PER_PAGE + 1}
+                                endIndex={Math.min(currentPage * ITEMS_PER_PAGE, filteredUsers.length)}
+                                onPageChange={handlePageChange}
+                                className="border-t border-slate-100"
+                            />
+                        )}
+                    </div>
+
+                    {/* Pagination */}
+                    {/* Mobile Pagination */}
+                    {!loading && filteredUsers.length > 0 && (
+                        <div className="md:hidden shrink-0 mt-auto">
+                            <Pagination
+                                currentPage={currentPage}
+                                totalPages={totalPages}
+                                totalItems={filteredUsers.length}
+                                startIndex={(currentPage - 1) * ITEMS_PER_PAGE + 1}
+                                endIndex={Math.min(currentPage * ITEMS_PER_PAGE, filteredUsers.length)}
+                                onPageChange={handlePageChange}
+                                className="bg-white border-t border-slate-200 rounded-t-xl shadow-sm"
+                            />
+                        </div>
                     )}
-                </div>
-            </div>
 
-            {/* Mobile View (Cards) */}
-            <div className="md:hidden flex-1 overflow-y-auto space-y-3 min-h-0 pr-1">
-                {loading ? (
-                    <div className="text-center py-10 text-slate-500">Loading users...</div>
-                ) : currentItems.length === 0 ? (
-                    <div className="text-center py-10 text-slate-500">No users found matching your search.</div>
-                ) : (
-                    currentItems.map((user) => (
-                        <MobileUserCard
-                            key={user.user_id}
-                            user={user}
-                            onEdit={() => handleOpenModal(user)}
-                        />
-                    ))
-                )}
-            </div>
+                    {/* Modal */}
+                    {isModalOpen && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+                            <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={handleCloseModal}></div>
+                            <div className="relative bg-white rounded-2xl shadow-xl w-full sm:max-w-4xl max-h-[90vh] flex flex-col animate-in zoom-in-95 duration-200">
+                                <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
+                                    <h2 className="text-xl font-bold text-slate-800">
+                                        {editingUser ? 'Edit User' : 'Add New User'}
+                                    </h2>
+                                    <button onClick={handleCloseModal} className="p-2 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600">
+                                        <X size={20} />
+                                    </button>
+                                </div>
 
-            {/* Desktop View (Table) */}
-            <div className="hidden md:flex bg-white rounded-2xl shadow-sm border border-slate-200/60 flex-1 min-h-0 flex-col overflow-hidden">
-                <div className="flex-1 overflow-auto custom-scrollbar">
-                    <table className="w-full text-left border-collapse">
-                        <thead>
-                            <tr className="bg-slate-50/50 border-b border-slate-100 sticky top-0 z-10 backdrop-blur-md">
-                                <HeaderCell>User Details</HeaderCell>
-                                <HeaderCell>Role & Designation</HeaderCell>
-                                <HeaderCell>Department</HeaderCell>
-                                <HeaderCell>Status</HeaderCell>
-                                <HeaderCell align="right">Actions</HeaderCell>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                            {loading ? (
-                                <EmptyRow message="Loading users..." />
-                            ) : currentItems.length === 0 ? (
-                                <EmptyRow message="No users found matching your search." />
-                            ) : (
-                                currentItems.map((user) => (
-                                    <UserRow
-                                        key={user.user_id}
-                                        user={user}
-                                        onEdit={() => handleOpenModal(user)}
-                                    />
-                                ))
-                            )}
-                            {/* Spacer rows */}
-                            {Array.from({ length: Math.max(0, ITEMS_PER_PAGE - currentItems.length) }).map((_, i) => (
-                                <tr key={`empty-${i}`}><td colSpan="5" className="h-16"></td></tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+                                <div className="flex-1 overflow-y-auto p-4 sm:p-6 custom-scrollbar">
+                                    <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-6">
+                                        {/* Profile Picture */}
+                                        <div className="col-span-1 md:col-span-2 flex flex-col items-center mb-4">
+                                            <div className="relative group">
+                                                <div className="w-24 h-24 rounded-full border-4 border-slate-100 overflow-hidden bg-slate-100 flex items-center justify-center shadow-sm">
+                                                    {formData.profile_picture ? (
+                                                        <img src={formData.profile_picture} alt="Profile" className="w-full h-full object-cover" />
+                                                    ) : (
+                                                        <User size={40} className="text-slate-400" />
+                                                    )}
+                                                </div>
+                                                <label className="absolute bottom-0 right-0 bg-primary text-primary-foreground p-2 rounded-full cursor-pointer hover:bg-primary/90 transition-colors shadow-md transform translate-x-1/4 translate-y-1/4">
+                                                    {uploading ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <Camera size={16} />}
+                                                    <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={uploading} />
+                                                </label>
+                                            </div>
+                                            <p className="text-xs text-slate-400 mt-2">Allowed *.jpeg, *.jpg, *.png, *.gif</p>
+                                        </div>
 
-                {/* Desktop Pagination - Integrated in Card */}
-                {!loading && filteredUsers.length > 0 && (
-                    <Pagination
-                        currentPage={currentPage}
-                        totalPages={totalPages}
-                        totalItems={filteredUsers.length}
-                        startIndex={(currentPage - 1) * ITEMS_PER_PAGE + 1}
-                        endIndex={Math.min(currentPage * ITEMS_PER_PAGE, filteredUsers.length)}
-                        onPageChange={handlePageChange}
-                        className="border-t border-slate-100"
-                    />
-                )}
-            </div>
+                                        {/* Form Fields */}
+                                        <div className="col-span-1 md:col-span-2 border-b pb-2 mb-2 mt-2">
+                                            <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-wider">Account Information</h3>
+                                        </div>
 
-            {/* Pagination */}
-            {/* Mobile Pagination */}
-            {!loading && filteredUsers.length > 0 && (
-                <div className="md:hidden shrink-0 mt-auto">
-                    <Pagination
-                        currentPage={currentPage}
-                        totalPages={totalPages}
-                        totalItems={filteredUsers.length}
-                        startIndex={(currentPage - 1) * ITEMS_PER_PAGE + 1}
-                        endIndex={Math.min(currentPage * ITEMS_PER_PAGE, filteredUsers.length)}
-                        onPageChange={handlePageChange}
-                        className="bg-white border-t border-slate-200 rounded-t-xl shadow-sm"
-                    />
+                                        <FormField
+                                            label="User ID" name="user_id" value={formData.user_id}
+                                            onChange={handleInputChange} required error={errors.user_id}
+                                            icon={Shield} placeholder="Eg: 120"
+                                            disabled={!!editingUser && currentUser?.role !== 'admin' && currentUser?.role !== 'Admin'}
+                                        />
+                                        <FormField
+                                            label="Username" name="username" value={formData.username}
+                                            onChange={handleInputChange} required error={errors.username}
+                                            icon={User} placeholder="jdoe"
+                                            className="italic"
+                                        />
+                                        <FormField
+                                            label="Email" name="email" type="email" value={formData.email}
+                                            onChange={handleInputChange} error={errors.email}
+                                            icon={Mail} placeholder="john@example.com"
+                                        />
+                                        <FormField
+                                            label="Password" name="password" type="text" value={formData.password}
+                                            onChange={handleInputChange} required={!editingUser} error={errors.password}
+                                            icon={Shield} placeholder={editingUser ? "Leave empty to keep current" : "Enter password"}
+                                        />
+
+                                        <div className="col-span-1 md:col-span-2 border-b pb-2 mb-2 mt-2">
+                                            <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-wider">Personal Details</h3>
+                                        </div>
+
+                                        <FormField
+                                            label="Full Name" name="full_name" value={formData.full_name}
+                                            onChange={handleInputChange} required error={errors.full_name}
+                                            icon={User} placeholder="John Doe"
+                                        />
+                                        <FormField
+                                            label="Phone Number" name="phone_number" value={formData.phone_number}
+                                            onChange={handleInputChange} error={errors.phone_number}
+                                            icon={Phone} placeholder="10 digit number"
+                                        />
+
+                                        <SelectField
+                                            label="Gender" name="gender" value={formData.gender}
+                                            onChange={handleInputChange} options={['Male', 'Female', 'Other']}
+                                        />
+                                        <DateField
+                                            label="Date of Birth" name="date_of_birth" value={formData.date_of_birth}
+                                            onChange={handleInputChange} error={errors.date_of_birth}
+                                        />
+
+                                        <div className="col-span-1 md:col-span-2">
+                                            <label className="block text-sm font-medium text-slate-700 mb-1">Current Address</label>
+                                            <textarea
+                                                name="current_address" value={formData.current_address} onChange={handleInputChange}
+                                                rows="2" className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:border-primary focus:ring-1 focus:ring-primary outline-none"
+                                                placeholder="Enter address"
+                                            ></textarea>
+                                        </div>
+
+
+                                        <div className="col-span-1 md:col-span-2 border-b pb-2 mb-2 mt-2">
+                                            <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-wider">Role & Permissions</h3>
+                                        </div>
+
+                                        <SelectField
+                                            label="Role" name="role" value={formData.role}
+                                            onChange={handleInputChange} options={['Admin', 'Sales Head', 'RM', 'CRM']}
+                                        />
+                                        <SelectField
+                                            label="Department" name="department" value={formData.department}
+                                            onChange={handleInputChange} options={['SALES', 'MANAGEMENT', 'FINANCE']}
+                                        />
+                                        <FormField
+                                            label="Designation" name="designation" value={formData.designation}
+                                            onChange={handleInputChange} icon={Shield} placeholder="Eg: Sales Manager"
+                                        />
+
+                                        <div className="col-span-1 md:col-span-2">
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <label className="block text-sm font-medium text-slate-700">Page Access</label>
+                                                <div className="flex gap-2 text-xs">
+                                                    <button type="button" onClick={() => setFormData(prev => ({ ...prev, page_access: ALL_PAGES.map(p => p.id) }))} className="text-primary hover:underline">Select All</button>
+                                                    <span className="text-slate-300">|</span>
+                                                    <button type="button" onClick={() => setFormData(prev => ({ ...prev, page_access: [] }))} className="text-slate-500 hover:underline">None</button>
+                                                </div>
+                                            </div>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 p-4 rounded-lg border border-slate-200">
+                                                {ALL_PAGES.map(page => (
+                                                    <label key={page.id} className="flex items-center gap-2 cursor-pointer">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={formData.page_access?.includes(page.id) || false}
+                                                            onChange={() => handlePageAccessToggle(page.id)}
+                                                            className="rounded text-primary focus:ring-primary"
+                                                        />
+                                                        <span className="text-sm text-slate-700">{page.label}</span>
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        <div className="col-span-1 md:col-span-2 mt-2">
+                                            <label className="flex items-center gap-3 p-4 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer">
+                                                <div className="relative inline-flex items-center cursor-pointer">
+                                                    <input type="checkbox" name="is_active" checked={formData.is_active} onChange={handleInputChange} className="sr-only peer" />
+                                                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/30 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                                                </div>
+                                                <div>
+                                                    <span className="block text-sm font-medium text-slate-900">Active Account</span>
+                                                    <span className="block text-xs text-slate-500">Allow this user to log in</span>
+                                                </div>
+                                            </label>
+                                        </div>
+                                    </form>
+                                </div>
+
+                                <div className="p-4 sm:px-6 border-t border-slate-100 bg-slate-50 rounded-b-2xl grid grid-cols-2 gap-3 sm:flex sm:justify-end">
+                                    <button type="button" onClick={handleCloseModal} className="w-full sm:w-auto px-5 py-2.5 sm:py-2 text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 font-medium transition-colors text-sm sm:text-base">Cancel</button>
+                                    <button onClick={handleSubmit} className="w-full sm:w-auto px-5 py-2.5 sm:py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 font-medium transition-colors shadow-sm text-sm sm:text-base">
+                                        {editingUser ? 'Save Changes' : 'Create User'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
 
-            {/* Modal */}
-            {isModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
-                    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={handleCloseModal}></div>
-                    <div className="relative bg-white rounded-2xl shadow-xl w-full sm:max-w-4xl max-h-[90vh] flex flex-col animate-in zoom-in-95 duration-200">
-                        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
-                            <h2 className="text-xl font-bold text-slate-800">
-                                {editingUser ? 'Edit User' : 'Add New User'}
-                            </h2>
-                            <button onClick={handleCloseModal} className="p-2 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600">
-                                <X size={20} />
-                            </button>
+            {activeTab === 'Contractor Visibility' && (
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[calc(100vh-250px)] min-h-[500px]">
+                    {/* Left Side: Contractors (Source) */}
+                    <div className="lg:col-span-5 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-full">
+                        <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center sticky top-0 z-10 backdrop-blur-sm">
+                            <div>
+                                <h2 className="font-semibold text-slate-800">Available Contractors</h2>
+                                <p className="text-xs text-slate-500 mt-0.5">Drag to assign</p>
+                            </div>
+                            <div className="bg-blue-50 text-blue-700 px-2.5 py-1 rounded-full text-xs font-medium">
+                                {filteredContractors.length} found
+                            </div>
                         </div>
+                        <div className="px-4 py-2 border-b border-slate-100 bg-white flex gap-2">
+                            <div className="relative flex-1">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                                <input
+                                    type="text"
+                                    placeholder="Search contractors..."
+                                    value={contractorSearchTerm}
+                                    onChange={(e) => setContractorSearchTerm(e.target.value)}
+                                    className="w-full pl-9 pr-4 py-2 text-sm rounded-lg border border-slate-200 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                                />
+                            </div>
+                            <select
+                                value={customerTypeFilter}
+                                onChange={(e) => setCustomerTypeFilter(e.target.value)}
+                                className="px-3 py-2 text-sm rounded-lg border border-slate-200 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary bg-white text-slate-700 min-w-[120px]"
+                            >
+                                <option value="All">All Types</option>
+                                {[...new Set(contractors.map(c => c.customer_type).filter(Boolean))].map(type => (
+                                    <option key={type} value={type}>{type}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-2">
+                            {filteredContractors.length === 0 ? (
+                                <div className="text-center py-10 text-slate-400 text-sm">No contractors found.</div>
+                            ) : (
+                                filteredContractors.map(contractor => (
+                                    <div
+                                        key={contractor.contractor_id}
+                                        draggable
+                                        onDragStart={(e) => handleDragStart(e, contractor.contractor_id)}
+                                        className="p-3 rounded-xl border border-slate-100 bg-white hover:border-blue-300 hover:shadow-md cursor-grab active:cursor-grabbing transition-all group"
+                                    >
+                                        <div className="flex justify-between items-start mb-1">
+                                            <h3 className="font-medium text-slate-900 line-clamp-1">{contractor.contractor_name} {contractor.nickname && <span className="text-slate-500 font-normal">({contractor.nickname})</span>}</h3>
+                                            <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded border ${contractor.customer_type === 'New' ? 'bg-green-50 text-green-700 border-green-100' :
+                                                'bg-slate-50 text-slate-600 border-slate-100'
+                                                }`}>
+                                                {contractor.customer_type}
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center gap-2 text-xs text-slate-500">
+                                            <span className="bg-slate-100 px-1 rounded">{contractor.contractor_id}</span>
+                                            <span>•</span>
+                                            <span className="truncate">{contractor.city || 'No City'}</span>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
 
-                        <div className="flex-1 overflow-y-auto p-4 sm:p-6 custom-scrollbar">
-                            <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-6">
-                                {/* Profile Picture */}
-                                <div className="col-span-1 md:col-span-2 flex flex-col items-center mb-4">
-                                    <div className="relative group">
-                                        <div className="w-24 h-24 rounded-full border-4 border-slate-100 overflow-hidden bg-slate-100 flex items-center justify-center shadow-sm">
-                                            {formData.profile_picture ? (
-                                                <img src={formData.profile_picture} alt="Profile" className="w-full h-full object-cover" />
-                                            ) : (
-                                                <User size={40} className="text-slate-400" />
+                    {/* Right Side: Users (Drop Targets) */}
+                    <div className="lg:col-span-7 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-full">
+                        <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center sticky top-0 z-10 backdrop-blur-sm">
+                            <div>
+                                <h2 className="font-semibold text-slate-800">User Access Management</h2>
+                                <p className="text-xs text-slate-500 mt-0.5">Drop contractors on users to assign</p>
+                            </div>
+                            <div className="bg-purple-50 text-purple-700 px-2.5 py-1 rounded-full text-xs font-medium">
+                                {filteredAccessUsers.length} Users
+                            </div>
+                        </div>
+                        <div className="px-4 py-2 border-b border-slate-100 bg-white">
+                            <div className="relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                                <input
+                                    type="text"
+                                    placeholder="Search users..."
+                                    value={userAccessSearchTerm}
+                                    onChange={(e) => setUserAccessSearchTerm(e.target.value)}
+                                    className="w-full pl-9 pr-4 py-2 text-sm rounded-lg border border-slate-200 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+                                />
+                            </div>
+                        </div>
+                        <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-3">
+                            {filteredAccessUsers.length === 0 ? (
+                                <div className="text-center py-10 text-slate-400 text-sm">No users found.</div>
+                            ) : (
+                                filteredAccessUsers.map(user => {
+                                    const isExpanded = expandedUserId === user.user_id;
+                                    const assigned = userAssignments[user.user_id] || [];
+
+                                    return (
+                                        <div
+                                            key={user.user_id}
+                                            onDragOver={handleDragOver}
+                                            onDrop={(e) => handleDropOnUser(e, user.user_id)}
+                                            className={`rounded-xl border transition-all duration-300 ${isExpanded
+                                                ? 'border-purple-200 bg-purple-50/30'
+                                                : 'border-slate-100 hover:border-purple-200 bg-white'
+                                                }`}
+                                        >
+                                            <div
+                                                className="p-3 flex items-center justify-between cursor-pointer"
+                                                onClick={() => toggleUserExpansion(user.user_id)}
+                                            >
+                                                <div className="flex items-center gap-3 overflow-hidden">
+                                                    <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 font-bold text-xs border border-slate-200 overflow-hidden shrink-0">
+                                                        {user.profile_picture ? (
+                                                            <img src={user.profile_picture} alt={user.full_name} className="w-full h-full object-cover" />
+                                                        ) : (
+                                                            user.full_name?.charAt(0).toUpperCase()
+                                                        )}
+                                                    </div>
+                                                    <div className="min-w-0">
+                                                        <h3 className="font-medium text-slate-900 truncate">{user.full_name}</h3>
+                                                        <div className="flex items-center gap-2 text-xs text-slate-500">
+                                                            <span className="bg-white px-1 border border-slate-100 rounded">{user.user_id}</span>
+                                                            <span className="truncate">{user.role}</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    {assigned.length > 0 && (
+                                                        <span className="bg-green-100 text-green-700 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                                                            {assigned.length} Granted
+                                                        </span>
+                                                    )}
+                                                    <div className={`text-slate-400 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`}>
+                                                        <ChevronRight size={18} className="rotate-90" />
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Expanded Area: Assigned Contractors */}
+                                            {isExpanded && (
+                                                <div className="px-3 pb-3 pt-0 animate-in slide-in-from-top-2">
+                                                    <div className="border-t border-purple-100 my-2"></div>
+                                                    <p className="text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">
+                                                        Assigned Contractors {assigned.length === 0 && '(None)'}
+                                                    </p>
+                                                    {assigned.length === 0 ? (
+                                                        <div className="text-center py-4 border-2 border-dashed border-purple-100 rounded-lg bg-white/50">
+                                                            <p className="text-xs text-purple-400">Drag contractors here to assign</p>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[300px] overflow-y-auto custom-scrollbar pr-1">
+                                                            {assigned.map(contrId => {
+                                                                // Find full contractor details if available, else just ID
+                                                                const contrInfo = contractors.find(c => c.contractor_id === contrId) || { contractor_name: 'Unknown', contractor_id: contrId };
+                                                                return (
+                                                                    <div key={contrId} className="flex justify-between items-center p-2 bg-white rounded border border-purple-100 shadow-sm">
+                                                                        <div className="min-w-0">
+                                                                            <p className="text-xs font-medium text-slate-800 truncate" title={contrInfo.contractor_name}>{contrInfo.contractor_name}</p>
+                                                                            <p className="text-[10px] text-slate-400">{contrId}</p>
+                                                                        </div>
+                                                                        <button
+                                                                            onClick={(e) => { e.stopPropagation(); removeAssignment(user.user_id, contrId); }}
+                                                                            className="p-1 hover:bg-red-50 text-slate-300 hover:text-red-500 rounded transition-colors"
+                                                                            title="Revoke Access"
+                                                                        >
+                                                                            <X size={14} />
+                                                                        </button>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    )}
+                                                </div>
                                             )}
                                         </div>
-                                        <label className="absolute bottom-0 right-0 bg-primary text-primary-foreground p-2 rounded-full cursor-pointer hover:bg-primary/90 transition-colors shadow-md transform translate-x-1/4 translate-y-1/4">
-                                            {uploading ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : <Camera size={16} />}
-                                            <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={uploading} />
-                                        </label>
-                                    </div>
-                                    <p className="text-xs text-slate-400 mt-2">Allowed *.jpeg, *.jpg, *.png, *.gif</p>
-                                </div>
-
-                                {/* Form Fields */}
-                                <div className="col-span-1 md:col-span-2 border-b pb-2 mb-2 mt-2">
-                                    <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-wider">Account Information</h3>
-                                </div>
-
-                                <FormField
-                                    label="User ID" name="user_id" value={formData.user_id}
-                                    onChange={handleInputChange} required error={errors.user_id}
-                                    icon={Shield} placeholder="Eg: 120"
-                                    disabled={!!editingUser && currentUser?.role !== 'admin' && currentUser?.role !== 'Admin'}
-                                    className="italic"
-                                />
-                                <FormField
-                                    label="Username" name="username" value={formData.username}
-                                    onChange={handleInputChange} required error={errors.username}
-                                    icon={User} placeholder="jdoe"
-                                    className="italic"
-                                />
-                                <FormField
-                                    label="Email" name="email" type="email" value={formData.email}
-                                    onChange={handleInputChange} error={errors.email}
-                                    icon={Mail} placeholder="john@example.com"
-                                />
-                                <FormField
-                                    label="Password" name="password" type="text" value={formData.password}
-                                    onChange={handleInputChange} required={!editingUser} error={errors.password}
-                                    icon={Shield} placeholder={editingUser ? "Leave empty to keep current" : "Enter password"}
-                                />
-
-                                <div className="col-span-1 md:col-span-2 border-b pb-2 mb-2 mt-2">
-                                    <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-wider">Personal Details</h3>
-                                </div>
-
-                                <FormField
-                                    label="Full Name" name="full_name" value={formData.full_name}
-                                    onChange={handleInputChange} required error={errors.full_name}
-                                    icon={User} placeholder="John Doe"
-                                />
-                                <FormField
-                                    label="Phone Number" name="phone_number" value={formData.phone_number}
-                                    onChange={handleInputChange} error={errors.phone_number}
-                                    icon={Phone} placeholder="10 digit number"
-                                />
-
-                                <SelectField
-                                    label="Gender" name="gender" value={formData.gender}
-                                    onChange={handleInputChange} options={['Male', 'Female', 'Other']}
-                                />
-                                <DateField
-                                    label="Date of Birth" name="date_of_birth" value={formData.date_of_birth}
-                                    onChange={handleInputChange} error={errors.date_of_birth}
-                                />
-
-                                <div className="col-span-1 md:col-span-2">
-                                    <label className="block text-sm font-medium text-slate-700 mb-1">Current Address</label>
-                                    <textarea
-                                        name="current_address" value={formData.current_address} onChange={handleInputChange}
-                                        rows="2" className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:border-primary focus:ring-1 focus:ring-primary outline-none"
-                                        placeholder="Enter address"
-                                    ></textarea>
-                                </div>
-
-
-                                <div className="col-span-1 md:col-span-2 border-b pb-2 mb-2 mt-2">
-                                    <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-wider">Role & Permissions</h3>
-                                </div>
-
-                                <SelectField
-                                    label="Role" name="role" value={formData.role}
-                                    onChange={handleInputChange} options={['Admin', 'Sales Head', 'RM', 'CRM']}
-                                />
-                                <SelectField
-                                    label="Department" name="department" value={formData.department}
-                                    onChange={handleInputChange} options={['SALES', 'MANAGEMENT', 'FINANCE']}
-                                />
-                                <FormField
-                                    label="Designation" name="designation" value={formData.designation}
-                                    onChange={handleInputChange} icon={Shield} placeholder="Eg: Sales Manager"
-                                />
-
-                                <div className="col-span-1 md:col-span-2">
-                                    <div className="flex items-center gap-2 mb-2">
-                                        <label className="block text-sm font-medium text-slate-700">Page Access</label>
-                                        <div className="flex gap-2 text-xs">
-                                            <button type="button" onClick={() => setFormData(prev => ({ ...prev, page_access: ALL_PAGES.map(p => p.id) }))} className="text-primary hover:underline">Select All</button>
-                                            <span className="text-slate-300">|</span>
-                                            <button type="button" onClick={() => setFormData(prev => ({ ...prev, page_access: [] }))} className="text-slate-500 hover:underline">None</button>
-                                        </div>
-                                    </div>
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 p-4 rounded-lg border border-slate-200">
-                                        {ALL_PAGES.map(page => (
-                                            <label key={page.id} className="flex items-center gap-2 cursor-pointer">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={formData.page_access?.includes(page.id) || false}
-                                                    onChange={() => handlePageAccessToggle(page.id)}
-                                                    className="rounded text-primary focus:ring-primary"
-                                                />
-                                                <span className="text-sm text-slate-700">{page.label}</span>
-                                            </label>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                <div className="col-span-1 md:col-span-2 mt-2">
-                                    <label className="flex items-center gap-3 p-4 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer">
-                                        <div className="relative inline-flex items-center cursor-pointer">
-                                            <input type="checkbox" name="is_active" checked={formData.is_active} onChange={handleInputChange} className="sr-only peer" />
-                                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/30 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-                                        </div>
-                                        <div>
-                                            <span className="block text-sm font-medium text-slate-900">Active Account</span>
-                                            <span className="block text-xs text-slate-500">Allow this user to log in</span>
-                                        </div>
-                                    </label>
-                                </div>
-                            </form>
-                        </div>
-
-                        <div className="p-4 sm:px-6 border-t border-slate-100 bg-slate-50 rounded-b-2xl grid grid-cols-2 gap-3 sm:flex sm:justify-end">
-                            <button type="button" onClick={handleCloseModal} className="w-full sm:w-auto px-5 py-2.5 sm:py-2 text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 font-medium transition-colors text-sm sm:text-base">Cancel</button>
-                            <button onClick={handleSubmit} className="w-full sm:w-auto px-5 py-2.5 sm:py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 font-medium transition-colors shadow-sm text-sm sm:text-base">
-                                {editingUser ? 'Save Changes' : 'Create User'}
-                            </button>
+                                    );
+                                })
+                            )}
                         </div>
                     </div>
                 </div>
@@ -667,29 +1056,38 @@ const Settings = () => {
     );
 };
 
-// Sub-components for cleaner JSX
+export default Settings;
+
+// ----------------------------------------------------------------------
+// Sub-components (Internal)
+// ----------------------------------------------------------------------
+
 const StatItem = ({ label, value }) => (
-    <div className="text-right">
-        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">{label}</p>
-        <p className="text-xl font-bold text-slate-900 leading-none">{value}</p>
+    <div>
+        <h3 className="text-2xl font-bold text-slate-800">{value}</h3>
+        <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">{label}</p>
     </div>
 );
 
-const HeaderCell = ({ children, align = 'left' }) => (
-    <th className={`px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-${align}`}>
+const HeaderCell = ({ children, align = "left" }) => (
+    <th className={`px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider text-${align}`}>
         {children}
     </th>
 );
 
 const EmptyRow = ({ message }) => (
-    <tr><td colSpan="5" className="px-6 py-12 text-center text-slate-500">{message}</td></tr>
+    <tr>
+        <td colSpan="5" className="px-4 py-8 text-center text-slate-500 text-sm">
+            {message}
+        </td>
+    </tr>
 );
 
 const UserRow = ({ user, onEdit }) => (
-    <tr className="group hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0">
-        <td className="py-4 px-6">
+    <tr className="hover:bg-slate-50/80 transition-colors group">
+        <td className="px-4 py-3">
             <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 font-semibold border border-slate-200 overflow-hidden">
+                <div className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 font-bold text-xs border border-slate-200 overflow-hidden shrink-0">
                     {user.profile_picture ? (
                         <img src={user.profile_picture} alt={user.full_name} className="w-full h-full object-cover" />
                     ) : (
@@ -697,158 +1095,152 @@ const UserRow = ({ user, onEdit }) => (
                     )}
                 </div>
                 <div>
-                    <p className="font-medium text-slate-800">{user.full_name}</p>
-                    <p className="text-sm text-slate-500">{user.email}</p>
-                    <p className="text-xs text-slate-400 mt-0.5 italic">{user.user_id}</p>
+                    <div className="font-medium text-slate-900 text-sm">{user.full_name}</div>
+                    <div className="text-xs text-slate-500">{user.user_id}</div>
                 </div>
             </div>
         </td>
-        <td className="px-6 py-4">
+        <td className="px-4 py-3">
             <div className="flex flex-col">
-                <span className={`inline-flex self-start items-center px-2 py-0.5 rounded text-xs font-medium ${user.role === 'admin' || user.role === 'Admin' ? 'bg-purple-50 text-purple-700' : 'bg-blue-50 text-blue-700'
-                    }`}>
-                    {user.role || 'N/A'}
-                </span>
-                <span className="text-sm text-slate-600 mt-1">{user.designation || '-'}</span>
+                <span className="text-sm text-slate-900">{user.role || '-'}</span>
+                <span className="text-xs text-slate-500">{user.designation || '-'}</span>
             </div>
         </td>
-        <td className="px-6 py-4 text-sm text-slate-600">{user.department || '-'}</td>
-        <td className="px-6 py-4">
-            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${user.is_active ? 'bg-green-50 text-green-700' : 'bg-slate-100 text-slate-500'
+        <td className="px-4 py-3 text-sm text-slate-600">
+            <span className="inline-flex items-center px-2 py-1 rounded bg-slate-100 text-slate-600 text-xs font-medium">
+                {user.department || 'General'}
+            </span>
+        </td>
+        <td className="px-4 py-3">
+            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${user.is_active ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
                 }`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${user.is_active ? 'bg-green-500' : 'bg-red-500'}`}></span>
                 {user.is_active ? 'Active' : 'Inactive'}
             </span>
         </td>
-        <td className="px-6 py-4 text-right">
-            <div className="flex items-center justify-end gap-2">
-                <button onClick={onEdit} className="p-2 rounded-lg text-slate-400 hover:text-primary hover:bg-primary/10 transition-colors">
-                    <Edit2 size={18} />
-                </button>
-            </div>
+        <td className="px-4 py-3 text-right">
+            <button
+                onClick={onEdit}
+                className="p-1.5 text-slate-400 hover:text-primary hover:bg-primary/5 rounded transition-all opacity-0 group-hover:opacity-100"
+                title="Edit User"
+            >
+                <Edit2 size={16} />
+            </button>
         </td>
     </tr>
 );
 
-const Pagination = ({ currentPage, totalPages, totalItems, startIndex, endIndex, onPageChange, className }) => (
-    <div className={`flex items-center justify-between px-4 py-4 sm:px-6 ${className || ''}`}>
-        <div className="flex items-center justify-between w-full">
-            <div className="hidden sm:block text-sm text-slate-500">
-                Showing <span className="font-medium">{startIndex}</span> to <span className="font-medium">{endIndex}</span> of <span className="font-medium">{totalItems}</span> results
-            </div>
-            <div className="flex gap-2 w-full sm:w-auto justify-between sm:justify-start">
-                <button onClick={() => onPageChange(currentPage - 1)} disabled={currentPage === 1} className="p-2 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors text-slate-600">
-                    <ChevronLeft size={16} />
-                </button>
-                <div className="flex gap-1 overflow-x-auto no-scrollbar">
-                    {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                        <button key={page} onClick={() => onPageChange(page)} className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${currentPage === page ? 'bg-primary text-primary-foreground' : 'text-slate-600 hover:bg-slate-50 border border-slate-200'}`}>
-                            {page}
-                        </button>
-                    ))}
-                </div>
-                <button onClick={() => onPageChange(currentPage + 1)} disabled={currentPage === totalPages} className="p-2 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors text-slate-600">
-                    <ChevronRight size={16} />
-                </button>
-            </div>
-        </div>
-    </div>
-);
-
 const MobileUserCard = ({ user, onEdit }) => (
-    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-3">
-        <div className="flex items-start justify-between">
-            <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 font-semibold border border-slate-200 overflow-hidden shrink-0">
-                    {user.profile_picture ? (
-                        <img src={user.profile_picture} alt={user.full_name} className="w-full h-full object-cover" />
-                    ) : (
-                        user.full_name?.charAt(0).toUpperCase()
-                    )}
-                </div>
-                <div className="min-w-0">
-                    <h3 className="font-semibold text-slate-900 truncate">{user.full_name}</h3>
-                    <p className="text-xs text-slate-500 truncate">{user.designation || user.role}</p>
-                </div>
+    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-start justify-between">
+        <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 font-bold text-sm border border-slate-200 overflow-hidden shrink-0">
+                {user.profile_picture ? (
+                    <img src={user.profile_picture} alt={user.full_name} className="w-full h-full object-cover" />
+                ) : (
+                    user.full_name?.charAt(0).toUpperCase()
+                )}
             </div>
-            <span className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${user.is_active ? 'bg-green-50 text-green-700' : 'bg-slate-100 text-slate-500'
-                }`}>
-                {user.is_active ? 'Active' : 'Inactive'}
-            </span>
-        </div>
-
-        <div className="grid grid-cols-2 gap-2 text-sm text-slate-600 border-t border-slate-50 pt-3">
-            <div className="flex flex-col">
-                <span className="text-xs text-slate-400">Department</span>
-                <span className="font-medium truncate">{user.department || '-'}</span>
-            </div>
-            <div className="flex flex-col">
-                <span className="text-xs text-slate-400">User ID</span>
-                <span className="font-medium truncate italic">{user.user_id}</span>
+            <div>
+                <h3 className="font-semibold text-slate-900 text-sm">{user.full_name}</h3>
+                <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-xs bg-slate-100 px-1.5 py-0.5 rounded text-slate-600">{user.user_id}</span>
+                    <span className="text-xs text-slate-500">• {user.role}</span>
+                </div>
             </div>
         </div>
-
         <button
             onClick={onEdit}
-            className="w-full mt-1 py-2 text-sm font-medium text-slate-600 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 transition-colors flex items-center justify-center gap-2"
+            className="p-2 text-slate-400 hover:text-primary hover:bg-primary/5 rounded-full transition-colors"
         >
-            <Edit2 size={14} />
-            <span>Edit Profile</span>
+            <Edit2 size={18} />
         </button>
     </div>
 );
 
-const FormField = ({ label, name, value, onChange, type = "text", required, error, icon: Icon, placeholder, disabled, className }) => (
-    <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1.5 sm:mb-1">{label} {required && <span className="text-red-500">*</span>}</label>
+const FormField = ({ label, icon: Icon, className = "", ...props }) => (
+    <div className="space-y-1.5">
+        <label className="block text-sm font-medium text-slate-700">{label} {props.required && <span className="text-red-500">*</span>}</label>
         <div className="relative">
-            {Icon && (
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <Icon className="h-5 w-5 sm:h-4 sm:w-4 text-slate-400" />
-                </div>
-            )}
+            {Icon && <Icon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />}
             <input
-                type={type}
-                name={name}
-                value={value}
-                onChange={onChange}
-                required={required}
-                disabled={disabled}
-                placeholder={placeholder}
-                className={`w-full ${Icon ? 'pl-10' : 'pl-4'} pr-4 py-2.5 sm:py-2 rounded-lg border ${error ? 'border-red-500 focus:border-red-500 focus:ring-red-200' : 'border-slate-300 focus:border-primary focus:ring-primary'
-                    } focus:ring-1 outline-none disabled:bg-slate-50 disabled:text-slate-500 text-base sm:text-sm ${className || ''}`}
+                className={`w-full ${Icon ? 'pl-10' : 'pl-4'} pr-4 py-2 rounded-lg border border-slate-300 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all placeholder:text-slate-400 ${props.error ? 'border-red-500 focus:border-red-500 focus:ring-red-200' : ''} ${className}`}
+                {...props}
             />
         </div>
-        {error && <p className="text-xs text-red-500 mt-1 ml-1">{error}</p>}
+        {props.error && <p className="text-red-500 text-xs mt-1 animate-in slide-in-from-top-1">{props.error}</p>}
     </div>
 );
 
-const SelectField = ({ label, name, value, onChange, options }) => (
-    <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1.5 sm:mb-1">{label}</label>
-        <select
-            name={name}
-            value={value}
-            onChange={onChange}
-            className="w-full px-4 py-2.5 sm:py-2 rounded-lg border border-slate-300 focus:border-primary focus:ring-1 focus:ring-primary outline-none bg-white text-base sm:text-sm appearance-none"
-        >
-            <option value="">Select {label}</option>
-            {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-        </select>
+const SelectField = ({ label, options, ...props }) => (
+    <div className="space-y-1.5">
+        <label className="block text-sm font-medium text-slate-700">{label}</label>
+        <div className="relative">
+            <select
+                className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:border-primary focus:ring-1 focus:ring-primary outline-none appearance-none bg-white"
+                {...props}
+            >
+                {options.map(opt => (
+                    <option key={opt} value={opt}>{opt}</option>
+                ))}
+            </select>
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                <ChevronRight size={16} className="rotate-90" />
+            </div>
+        </div>
     </div>
 );
 
-const DateField = ({ label, name, value, onChange, error }) => (
-    <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1.5 sm:mb-1">{label}</label>
+const DateField = ({ label, ...props }) => (
+    <div className="space-y-1.5">
+        <label className="block text-sm font-medium text-slate-700">{label}</label>
         <input
             type="date"
-            name={name}
-            value={value}
-            onChange={onChange}
-            className={`w-full px-4 py-2.5 sm:py-2 rounded-lg border ${error ? 'border-red-500' : 'border-slate-300'} focus:border-primary focus:ring-1 focus:ring-primary outline-none text-base sm:text-sm`}
+            className={`w-full px-4 py-2 rounded-lg border border-slate-300 focus:border-primary focus:ring-1 focus:ring-primary outline-none text-slate-600 ${props.error ? 'border-red-500' : ''}`}
+            {...props}
         />
-        {error && <p className="text-xs text-red-500 mt-1 ml-1">{error}</p>}
+        {props.error && <p className="text-red-500 text-xs mt-1">{props.error}</p>}
     </div>
 );
 
-export default Settings;
+const Pagination = ({ currentPage, totalPages, totalItems, startIndex, endIndex, onPageChange, className }) => (
+    <div className={`flex flex-col sm:flex-row items-center justify-between p-4 gap-4 ${className}`}>
+        <p className="text-sm text-slate-500">
+            Showing <span className="font-medium text-slate-900">{startIndex}</span> to <span className="font-medium text-slate-900">{endIndex}</span> of <span className="font-medium text-slate-900">{totalItems}</span> results
+        </p>
+        <div className="flex items-center gap-2">
+            <button
+                onClick={() => onPageChange(currentPage - 1)}
+                disabled={currentPage === 1}
+                className="p-2 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+                <ChevronLeft size={16} className="text-slate-600" />
+            </button>
+            <div className="flex items-center gap-1">
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    let pageNum;
+                    if (totalPages <= 5) pageNum = i + 1;
+                    else if (currentPage <= 3) pageNum = i + 1;
+                    else if (currentPage >= totalPages - 2) pageNum = totalPages - 4 + i;
+                    else pageNum = currentPage - 2 + i;
+
+                    return (
+                        <button
+                            key={pageNum}
+                            onClick={() => onPageChange(pageNum)}
+                            className={`w-8 h-8 rounded-lg text-sm font-medium transition-colors ${currentPage === pageNum ? 'bg-primary text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}`}
+                        >
+                            {pageNum}
+                        </button>
+                    );
+                })}
+            </div>
+            <button
+                onClick={() => onPageChange(currentPage + 1)}
+                disabled={currentPage === totalPages}
+                className="p-2 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+                <ChevronRight size={16} className="text-slate-600" />
+            </button>
+        </div>
+    </div>
+);

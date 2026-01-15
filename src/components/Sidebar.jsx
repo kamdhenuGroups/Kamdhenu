@@ -15,7 +15,10 @@ import {
   Users,
   LayoutDashboard,
   Briefcase,
-  FileText
+  FileText,
+  UserPlus,
+  DollarSign,
+  MapPin
 } from 'lucide-react';
 
 const Sidebar = ({ onClose }) => {
@@ -42,10 +45,22 @@ const Sidebar = ({ onClose }) => {
             // Get latest state from store to avoid stale closure
             const currentUser = useAuthStore.getState().user;
 
+            // Handle Postgres array string format from Realtime {item1,item2}
+            let newPageAccess = newData.page_access;
+            if (typeof newPageAccess === 'string') {
+              // Convert "{a,b}" to ["a","b"]
+              newPageAccess = newPageAccess.replace(/^\{|\}$/g, '').split(',');
+              // Handle empty array case "{}" which split returns [""]
+              if (newPageAccess.length === 1 && newPageAccess[0] === "") {
+                newPageAccess = [];
+              }
+            }
+
             // Merge new data while maintaining compatibility fields
             const updatedUser = {
               ...currentUser,
               ...newData,
+              page_access: newPageAccess || newData.page_access || currentUser.page_access,
               Name: newData.full_name || currentUser?.Name,
               Admin: (newData.role?.toLowerCase() === 'admin' || newData.role === 'Admin') ? 'Yes' : 'No',
             };
@@ -71,21 +86,17 @@ const Sidebar = ({ onClose }) => {
   const MASTER_MENU_ITEMS = [
     { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', id: 'dashboard' },
     { path: '/new-order', icon: ShoppingCart, label: 'New Order', id: 'new-order' },
+    { path: '/add-customers', icon: UserPlus, label: 'Add Customers', id: 'add-customers' },
+    { path: '/add-sites', icon: MapPin, label: 'Add Sites', id: 'add-sites' },
+    { path: '/cac', icon: DollarSign, label: 'CAC', id: 'cac' },
     { path: '/leads', icon: Users, label: 'Leads', id: 'leads' },
     { path: '/crm', icon: Briefcase, label: 'CRM', id: 'crm' },
     { path: '/order-details', icon: FileText, label: 'Order Details', id: 'order-details' },
-
     { path: '/settings', icon: Settings, label: 'Settings', id: 'settings' },
   ];
 
   // Helper: Check if user has access to a specific page ID
   const hasAccess = (pageId) => {
-    // Check if user is admin
-    const isAdmin = user?.Admin === 'Yes' || user?.role === 'admin' || user?.role === 'Admin';
-
-    // Admin always has access.
-    if (isAdmin) return true;
-
     // If no page_access defined (legacy users), fallback to basic employee pages
     if (!user?.page_access || !Array.isArray(user?.page_access)) {
       const DEFAULT_ACCESS = ['my-profile'];

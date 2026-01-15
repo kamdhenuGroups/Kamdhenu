@@ -8,6 +8,8 @@ import {
     Save,
     X,
     ChevronDown,
+    ChevronLeft,
+    ChevronRight,
     MapPin,
     Phone,
     Truck,
@@ -54,6 +56,23 @@ const useDropdownPosition = (isOpen) => {
     return { ref, positionClass };
 };
 
+const useClickOutside = (ref, handler) => {
+    React.useEffect(() => {
+        const listener = (event) => {
+            if (!ref.current || ref.current.contains(event.target)) {
+                return;
+            }
+            handler(event);
+        };
+        document.addEventListener('mousedown', listener);
+        document.addEventListener('touchstart', listener);
+        return () => {
+            document.removeEventListener('mousedown', listener);
+            document.removeEventListener('touchstart', listener);
+        };
+    }, [ref, handler]);
+};
+
 const NewOrder = () => {
     const [loading, setLoading] = useState(false);
     const dateInputRef = useRef(null);
@@ -61,6 +80,7 @@ const NewOrder = () => {
     // Form State
     const [orderDate, setOrderDate] = useState(new Date().toISOString().split('T')[0]);
     const [contractorName, setContractorName] = useState('');
+    const [selectedContractorId, setSelectedContractorId] = useState(null);
     const [customerPhone, setCustomerPhone] = useState('');
     const [customerType, setCustomerType] = useState('');
     const [items, setItems] = useState([{ id: 1, product: '', quantity: 1, price: 0, points: 0, showDropdown: false }]);
@@ -98,7 +118,7 @@ const NewOrder = () => {
     const [challanName, setChallanName] = useState('');
     const [sitePoc, setSitePoc] = useState('');
     const [deliveryAddress, setDeliveryAddress] = useState('');
-    const [pointRole, setPointRole] = useState('');
+
     const [paymentTerms, setPaymentTerms] = useState('');
     const [manualPaymentDays, setManualPaymentDays] = useState('');
     const [logistics, setLogistics] = useState('');
@@ -159,6 +179,43 @@ const NewOrder = () => {
     const [showAllocationRoleDropdown, setShowAllocationRoleDropdown] = useState(false);
     const allocationRoleDropdown = useDropdownPosition(showAllocationRoleDropdown); // Reuse generic hook if works, or just basic logic
 
+    // Refs for Click Outside
+    const contractorWrapperRef = useRef(null);
+    const stateWrapperRef = useRef(null);
+    const cityWrapperRef = useRef(null);
+    const addressWrapperRef = useRef(null);
+    const historyStateWrapperRef = useRef(null);
+    const beneficiaryWrapperRef = useRef(null);
+    const allocationRoleWrapperRef = useRef(null);
+    const logisticsWrapperRef = useRef(null);
+    const paymentWrapperRef = useRef(null);
+
+    useClickOutside(contractorWrapperRef, () => setShowContractorDropdown(false));
+    useClickOutside(stateWrapperRef, () => setShowStateDropdown(false));
+    useClickOutside(cityWrapperRef, () => setShowCityDropdown(false));
+    useClickOutside(addressWrapperRef, () => setShowAddressDropdown(false));
+    useClickOutside(historyStateWrapperRef, () => setShowHistoryStateDropdown(false));
+    useClickOutside(beneficiaryWrapperRef, () => setShowBeneficiaryDropdown(false));
+    useClickOutside(allocationRoleWrapperRef, () => setShowAllocationRoleDropdown(false));
+    useClickOutside(logisticsWrapperRef, () => setShowLogisticsDropdown(false));
+    useClickOutside(paymentWrapperRef, () => setShowPaymentDropdown(false));
+
+    // Items Dropdown Click Outside (Global listener for dynamic items)
+    React.useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (!event.target.closest('.item-dropdown-wrapper')) {
+                setItems(currentItems => {
+                    if (currentItems.some(item => item.showDropdown)) {
+                        return currentItems.map(item => ({ ...item, showDropdown: false }));
+                    }
+                    return currentItems;
+                });
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
 
     const [availableBeneficiaries, setAvailableBeneficiaries] = useState([]);
     const [showBeneficiaryDropdown, setShowBeneficiaryDropdown] = useState(false);
@@ -169,11 +226,18 @@ const NewOrder = () => {
     React.useEffect(() => {
         const loadData = async () => {
             const [contractorsRes, beneficiariesRes] = await Promise.all([
-                orderService.getUniqueContractors(),
+                orderService.getContractorData(),
                 orderService.getUniqueBeneficiaries()
             ]);
 
-            if (contractorsRes.data) setAvailableContractors(contractorsRes.data);
+            if (contractorsRes.data) {
+                const mappedData = contractorsRes.data.map(c => ({
+                    ...c,
+                    customer_type: orderService.getCustomerTypeFromId(c.contractor_id),
+                    customer_phone: c.customer_phone ? String(c.customer_phone) : ''
+                }));
+                setAvailableContractors(mappedData);
+            }
             if (beneficiariesRes.data) setAvailableBeneficiaries(beneficiariesRes.data);
         };
         loadData();
@@ -229,6 +293,7 @@ const NewOrder = () => {
     }, [currentUser, selectedCity, customerPhone, contractorName, customerType, nickname, mistryName, deliveryAddress]);
 
     const getGeneratedCustomerId = () => {
+        if (selectedContractorId) return selectedContractorId;
         return idGenerator.generateCustomerId({
             customerPhone,
             cityCode,
@@ -268,6 +333,20 @@ const NewOrder = () => {
 
     const filteredOrderHistory = orderHistory.filter(order =>
         !historySelectedState || order.state === historySelectedState || (historySelectedState === 'No State' && !order.state)
+    );
+
+    // Pagination Logic
+    const [currentPage, setCurrentPage] = useState(1);
+    const itemsPerPage = 10;
+
+    React.useEffect(() => {
+        setCurrentPage(1);
+    }, [historySelectedState, historyStateSearch]);
+
+    const totalPages = Math.ceil(filteredOrderHistory.length / itemsPerPage);
+    const paginatedOrderHistory = filteredOrderHistory.slice(
+        (currentPage - 1) * itemsPerPage,
+        currentPage * itemsPerPage
     );
 
     const cities = selectedState ? INDIAN_LOCATIONS[selectedState] || [] : [];
@@ -364,23 +443,73 @@ const NewOrder = () => {
         setChallanName('');
         setSitePoc('');
         setDeliveryAddress('');
-        setPointRole('');
+
         setPaymentTerms('');
         setManualPaymentDays('');
         setLogistics('');
         setSelectedState('');
         setSelectedCity('');
         setIsExistingBeneficiary(false);
+        setSelectedContractorId(null);
     };
 
     const handleSubmit = async (e) => {
         e.preventDefault();
 
+        // 1. Basic Fields
         if (!customerType) {
             toast.error('Please select a customer type');
             return;
         }
+        if (!contractorName) {
+            toast.error('Please enter a contractor name');
+            return;
+        }
+        if (!customerPhone) {
+            toast.error('Please enter a phone number');
+            return;
+        }
 
+        // 2. Conditional Fields
+        if ((customerType === 'Contractor' || customerType === 'Mistry') && !existingContractor && !nickname) {
+            toast.error('Please enter a nickname');
+            return;
+        }
+        if (customerType === 'Mistry' && !mistryName) {
+            toast.error('Please enter a mistry name');
+            return;
+        }
+
+        // 3. Location & Site Details
+        if (!selectedState) {
+            toast.error('Please select a state');
+            return;
+        }
+        if (!selectedCity) {
+            toast.error('Please select a city');
+            return;
+        }
+        if (!deliveryAddress) {
+            toast.error('Please enter delivery address');
+            return;
+        }
+        if (!sitePoc) {
+            toast.error('Please enter site POC number');
+            return;
+        }
+        if (!challanName) {
+            toast.error('Please enter challan reference name');
+            return;
+        }
+
+        // 4. Items Validation
+        const invalidItem = items.find(i => !i.product || !i.quantity || i.quantity <= 0 || i.price === '' || i.price < 0);
+        if (invalidItem) {
+            toast.error('Please fill all item details (Product, Quantity, Price)');
+            return;
+        }
+
+        // 5. Points Validation
         const totalPoints = orderService.calculateOrderPoints(items);
         if (totalPoints > 0) {
             const allocated = pointsAllocations.reduce((acc, curr) => acc + (parseInt(curr.points) || 0), 0);
@@ -388,6 +517,20 @@ const NewOrder = () => {
                 toast.error(`Please allocate all ${totalPoints} points. Remaining: ${totalPoints - allocated}`);
                 return;
             }
+        }
+
+        // 6. Payment & Logistics
+        if (!logistics) {
+            toast.error('Please select logistics mode');
+            return;
+        }
+        if (!paymentTerms) {
+            toast.error('Please select payment terms');
+            return;
+        }
+        if (paymentTerms === 'Manual entry for days' && !manualPaymentDays) {
+            toast.error('Please enter manual payment days');
+            return;
         }
 
 
@@ -404,7 +547,7 @@ const NewOrder = () => {
                 challanName,
                 sitePoc,
                 deliveryAddress,
-                pointRole,
+
                 paymentTerms,
                 manualPaymentDays,
                 logistics,
@@ -430,12 +573,12 @@ const NewOrder = () => {
             setContractorName('');
             setCustomerPhone('');
             setCustomerType('');
-            setItems([{ id: 1, product: '', quantity: 1, price: 0, points: 0 }]);
+            setItems([{ id: 1, product: '', quantity: 1, price: 0, points: 0, showDropdown: false }]);
             setNotes('');
             setChallanName('');
             setSitePoc('');
             setDeliveryAddress('');
-            setPointRole('');
+
             setPaymentTerms('');
             setManualPaymentDays('');
             setLogistics('');
@@ -449,7 +592,6 @@ const NewOrder = () => {
             setCityCode('');
             setMistryName('');
             setPointsAllocations([]);
-            setPointsAllocations([]);
             setCurrentAllocation({
                 role: '',
                 name: '',
@@ -457,6 +599,7 @@ const NewOrder = () => {
                 points: ''
             });
             setIsExistingBeneficiary(false);
+            setSelectedContractorId(null);
 
             if (currentUser && selectedCity) {
 
@@ -478,6 +621,15 @@ const NewOrder = () => {
             c.contractor_name?.toLowerCase() === contractorName.toLowerCase()
         );
     }, [contractorName, availableContractors]);
+
+    const selectedContractor = React.useMemo(() => {
+        if (!selectedContractorId) return null;
+        return availableContractors.find(c => c.contractor_id === selectedContractorId);
+    }, [selectedContractorId, availableContractors]);
+
+    const areLocationsLocked = React.useMemo(() => {
+        return false;
+    }, [selectedContractor]);
 
     // Auto-fill nickname if exact match found
     React.useEffect(() => {
@@ -536,599 +688,796 @@ const NewOrder = () => {
             </div>
 
             {/* Main Content */}
-            <div className="flex-1 overflow-y-auto custom-scrollbar">
+            <div className="flex-1 overflow-hidden relative">
                 {activeTab === 'new' ? (
-                    <form onSubmit={handleSubmit} className="max-w-6xl mx-auto space-y-6 pb-10">
-                        {/* Generated IDs Banner */}
-                        {((currentUser && getGeneratedOrderId()) || getGeneratedCustomerId() || (currentUser && getGeneratedSiteId())) && (
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 animate-in fade-in slide-in-from-top-4 duration-500">
-                                {/* Order ID */}
-                                <div className={`transition-all duration-500 ease-in-out ${currentUser && getGeneratedOrderId() ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4 pointer-events-none hidden md:block md:invisible'}`}>
-                                    <div className="bg-blue-50/50 border border-blue-100 p-4 rounded-xl flex flex-col justify-center items-center text-center shadow-sm h-full">
-                                        <span className="text-xs font-bold text-blue-500 uppercase tracking-wider mb-1">Order ID</span>
-                                        <span className="text-sm md:text-base font-bold text-slate-700 break-all">
-                                            {getGeneratedOrderId()}
-                                        </span>
-                                    </div>
-                                </div>
-
-                                {/* Contractor ID */}
-                                <div className={`transition-all duration-500 ease-in-out ${getGeneratedCustomerId() ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4 pointer-events-none hidden md:block md:invisible'}`}>
-                                    <div className="bg-indigo-50/50 border border-indigo-100 p-4 rounded-xl flex flex-col justify-center items-center text-center shadow-sm h-full">
-                                        <span className="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-1">Contractor ID</span>
-                                        <span className="text-sm md:text-base font-bold text-slate-700 break-all">
-                                            {getGeneratedCustomerId()}
-                                        </span>
-                                    </div>
-                                </div>
-
-                                {/* Site ID */}
-                                <div className={`transition-all duration-500 ease-in-out ${currentUser && getGeneratedSiteId() ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4 pointer-events-none hidden md:block md:invisible'}`}>
-                                    <div className="bg-violet-50/50 border border-violet-100 p-4 rounded-xl flex flex-col justify-center items-center text-center shadow-sm h-full">
-                                        <span className="text-xs font-bold text-violet-500 uppercase tracking-wider mb-1">Site ID</span>
-                                        <span className="text-sm md:text-base font-bold text-slate-700 break-all">
-                                            {getGeneratedSiteId()}
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Order Details Card */}
-                        <div className="bg-white rounded-2xl shadow-sm border border-slate-200/60">
-                            <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 rounded-t-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                                <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                                    <div className="bg-white p-1.5 rounded-lg border border-slate-200 shadow-sm text-primary">
-                                        <FileText size={18} />
-                                    </div>
-                                    Order Details
-                                </h2>
-                                <div className="relative flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm group hover:border-primary/30 transition-colors">
-                                    <Calendar size={14} className="text-slate-400 group-hover:text-primary transition-colors" />
-                                    <span className="text-sm font-medium text-slate-700 min-w-[80px]">
-                                        {orderDate ? orderDate.split('-').reverse().join('/') : 'DD/MM/YYYY'}
-                                    </span>
-                                    <input
-                                        ref={dateInputRef}
-                                        type="date"
-                                        value={orderDate}
-                                        onChange={(e) => setOrderDate(e.target.value)}
-                                        onClick={() => dateInputRef.current?.showPicker()}
-                                        required
-                                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="p-6 md:p-8 grid grid-cols-1 gap-10">
-
-                                {/* Section 1: Customer Information */}
-                                <div className="space-y-6">
-                                    <div className="flex items-center gap-3">
-                                        <div className="h-8 w-8 rounded-full bg-blue-50 flex items-center justify-center text-blue-600">
-                                            <User size={16} />
+                    <div className="h-full overflow-y-auto custom-scrollbar">
+                        <form onSubmit={handleSubmit} className="max-w-6xl mx-auto space-y-6 p-6 pb-20">
+                            {/* Generated IDs Banner */}
+                            {((currentUser && getGeneratedOrderId()) || getGeneratedCustomerId() || (currentUser && getGeneratedSiteId())) && (
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 animate-in fade-in slide-in-from-top-4 duration-500">
+                                    {/* Order ID */}
+                                    <div className={`transition-all duration-500 ease-in-out ${currentUser && getGeneratedOrderId() ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4 pointer-events-none hidden md:block md:invisible'}`}>
+                                        <div className="bg-blue-50/50 border border-blue-100 p-4 rounded-xl flex flex-col justify-center items-center text-center shadow-sm h-full">
+                                            <span className="text-xs font-bold text-blue-500 uppercase tracking-wider mb-1">Order ID</span>
+                                            <span className="text-sm md:text-base font-bold text-slate-700 break-all">
+                                                {getGeneratedOrderId()}
+                                            </span>
                                         </div>
-                                        <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Customer Information</h3>
                                     </div>
 
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
-                                        {/* Customer Type */}
-                                        <div className="md:col-span-2">
-                                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Customer Type</label>
-                                            <div className="flex flex-wrap gap-3">
-                                                {CUSTOMER_TYPES.map(type => {
-                                                    const isDisabled = existingContractor &&
-                                                        type !== existingContractor.customer_type &&
-                                                        type !== 'Mistry';
+                                    {/* Contractor ID */}
+                                    <div className={`transition-all duration-500 ease-in-out ${getGeneratedCustomerId() ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4 pointer-events-none hidden md:block md:invisible'}`}>
+                                        <div className="bg-indigo-50/50 border border-indigo-100 p-4 rounded-xl flex flex-col justify-center items-center text-center shadow-sm h-full">
+                                            <span className="text-xs font-bold text-indigo-500 uppercase tracking-wider mb-1">Contractor ID</span>
+                                            <span className="text-sm md:text-base font-bold text-slate-700 break-all">
+                                                {getGeneratedCustomerId()}
+                                            </span>
+                                        </div>
+                                    </div>
 
-                                                    return (
+                                    {/* Site ID */}
+                                    <div className={`transition-all duration-500 ease-in-out ${currentUser && getGeneratedSiteId() ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4 pointer-events-none hidden md:block md:invisible'}`}>
+                                        <div className="bg-violet-50/50 border border-violet-100 p-4 rounded-xl flex flex-col justify-center items-center text-center shadow-sm h-full">
+                                            <span className="text-xs font-bold text-violet-500 uppercase tracking-wider mb-1">Site ID</span>
+                                            <span className="text-sm md:text-base font-bold text-slate-700 break-all">
+                                                {getGeneratedSiteId()}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Order Details Card */}
+                            <div className="bg-white rounded-2xl shadow-sm border border-slate-200/60">
+                                <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 rounded-t-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                    <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                                        <div className="bg-white p-1.5 rounded-lg border border-slate-200 shadow-sm text-primary">
+                                            <FileText size={18} />
+                                        </div>
+                                        Order Details
+                                    </h2>
+                                    <div className="relative flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-sm group hover:border-primary/30 transition-colors">
+                                        <Calendar size={14} className="text-slate-400 group-hover:text-primary transition-colors" />
+                                        <span className="text-sm font-medium text-slate-700 min-w-[80px]">
+                                            {orderDate ? orderDate.split('-').reverse().join('/') : 'DD/MM/YYYY'}
+                                        </span>
+                                        <input
+                                            ref={dateInputRef}
+                                            type="date"
+                                            value={orderDate}
+                                            onChange={(e) => setOrderDate(e.target.value)}
+                                            onClick={() => dateInputRef.current?.showPicker()}
+                                            required
+                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="p-6 md:p-8 grid grid-cols-1 gap-10">
+
+                                    {/* Section 1: Customer Information */}
+                                    <div className="space-y-6">
+                                        <div className="flex items-center gap-3">
+                                            <div className="h-8 w-8 rounded-full bg-blue-50 flex items-center justify-center text-blue-600">
+                                                <User size={16} />
+                                            </div>
+                                            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Customer Information</h3>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
+                                            {/* Customer Type */}
+                                            <div className="md:col-span-2">
+                                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Customer Type <span className="text-red-500">*</span></label>
+                                                <div className="flex flex-wrap gap-3">
+                                                    {CUSTOMER_TYPES.map(type => {
+                                                        const isDisabled = existingContractor &&
+                                                            type !== existingContractor.customer_type &&
+                                                            type !== 'Mistry';
+
+                                                        return (
+                                                            <button
+                                                                key={type}
+                                                                type="button"
+                                                                onClick={() => setCustomerType(type)}
+                                                                disabled={isDisabled}
+                                                                className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 border ${customerType === type
+                                                                    ? 'bg-slate-800 text-white border-slate-800 shadow-md transform scale-105'
+                                                                    : isDisabled
+                                                                        ? 'bg-slate-50 text-slate-300 border-slate-100 cursor-not-allowed'
+                                                                        : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                                                                    }`}
+                                                            >
+                                                                {type}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                    {(contractorName || customerType) && (
                                                         <button
-                                                            key={type}
                                                             type="button"
-                                                            onClick={() => setCustomerType(type)}
-                                                            disabled={isDisabled}
-                                                            className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 border ${customerType === type
-                                                                ? 'bg-slate-800 text-white border-slate-800 shadow-md transform scale-105'
-                                                                : isDisabled
-                                                                    ? 'bg-slate-50 text-slate-300 border-slate-100 cursor-not-allowed'
-                                                                    : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                                                            onClick={handleClearCustomer}
+                                                            className="px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 hover:border-red-200 flex items-center gap-2"
+                                                        >
+                                                            <X size={14} />
+                                                            Clear
+                                                        </button>
+                                                    )}
+                                                </div>
+                                                {!customerType && <p className="text-xs text-amber-600 mt-2 font-medium flex items-center gap-1"><span className="w-1 h-1 rounded-full bg-amber-600"></span> Please select a customer type</p>}
+                                            </div>
+
+                                            {/* Contractor Name */}
+                                            <div className="relative">
+                                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
+                                                    Contractor Name <span className="text-red-500">*</span>
+                                                </label>
+                                                <div className="relative group" ref={contractorWrapperRef}>
+                                                    <input
+                                                        type="text"
+                                                        value={contractorName}
+                                                        onChange={(e) => {
+                                                            setContractorName(e.target.value);
+                                                            setSelectedContractorId(null);
+                                                            setShowContractorDropdown(true);
+                                                        }}
+                                                        onFocus={() => setShowContractorDropdown(true)}
+                                                        required
+                                                        className="block w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none text-sm font-medium text-slate-800 placeholder:text-slate-400"
+                                                        placeholder="Search or enter name..."
+                                                    />
+                                                    <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-slate-400 group-focus-within:text-primary transition-colors">
+                                                        <Search size={16} />
+                                                    </div>
+
+                                                    {/* Contractor Dropdown */}
+                                                    {showContractorDropdown && (contractorName || availableContractors.length > 0) && (
+                                                        <>
+                                                            <div
+                                                                ref={contractorDropdown.ref}
+                                                                className={`absolute z-20 w-full bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-y-auto custom-scrollbar flex flex-col animate-in fade-in zoom-in-95 duration-100 ${contractorDropdown.positionClass}`}
+                                                            >
+                                                                {availableContractors
+                                                                    .filter(c =>
+                                                                        (c.contractor_name?.toLowerCase() || '').includes(contractorName.toLowerCase()) ||
+                                                                        (c.contractor_id?.toLowerCase() || '').includes(contractorName.toLowerCase())
+                                                                    )
+                                                                    .map((contractor, idx) => (
+                                                                        <div
+                                                                            key={contractor.contractor_id || idx}
+                                                                            className="px-4 py-3 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0 group"
+                                                                            onClick={() => {
+                                                                                setContractorName(contractor.contractor_name);
+                                                                                if (contractor.customer_phone) setCustomerPhone(contractor.customer_phone);
+                                                                                if (contractor.customer_type) setCustomerType(contractor.customer_type);
+                                                                                if (contractor.nickname) setNickname(contractor.nickname);
+                                                                                if (contractor.contractor_id) setSelectedContractorId(contractor.contractor_id);
+
+                                                                                // Reset other fields since we are using master data
+                                                                                setMistryName('');
+                                                                                setSitePoc('');
+                                                                                setDeliveryAddress('');
+
+                                                                                setPaymentTerms('');
+                                                                                setManualPaymentDays('');
+                                                                                setLogistics('');
+
+                                                                                setChallanName('');
+
+                                                                                setShowContractorDropdown(false);
+                                                                            }}
+                                                                        >
+                                                                            <div className="flex justify-between items-center">
+                                                                                <span className="text-sm font-bold text-slate-700 group-hover:text-primary transition-colors">
+                                                                                    {contractor.contractor_name}
+                                                                                    {contractor.customer_type === 'Contractor' && contractor.nickname && <span className="text-slate-400 font-normal ml-1">({contractor.nickname})</span>}
+                                                                                </span>
+                                                                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200 uppercase tracking-wide">{contractor.customer_type || 'Unknown'}</span>
+                                                                            </div>
+                                                                            {/* Show Contractor ID */}
+                                                                            {contractor.contractor_id && (
+                                                                                <div className="text-sm text-slate-500 mt-0.5 truncate">
+                                                                                    ID: {contractor.contractor_id}
+                                                                                </div>
+                                                                            )}
+                                                                            {(contractor.customer_phone || (contractor.customer_type === 'Mistry' && contractor.contractor_id)) && (
+                                                                                <div className="text-xs text-slate-500 mt-1 flex items-center gap-2">
+                                                                                    {contractor.customer_phone && (
+                                                                                        <span className="flex items-center gap-1">
+                                                                                            <Phone size={10} />
+                                                                                            {contractor.customer_phone}
+                                                                                        </span>
+                                                                                    )}
+                                                                                    {/* For Mistry, show linked Contractor Name derived from ID */}
+                                                                                    {contractor.customer_type === 'Mistry' && contractor.contractor_id && (
+                                                                                        <span className="flex items-center gap-1 text-slate-400">
+                                                                                            • {contractor.contractor_id.split('/')[3]?.split('-')[0]}
+                                                                                        </span>
+                                                                                    )}
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    ))
+                                                                }
+                                                                {availableContractors.filter(c =>
+                                                                    (c.contractor_name?.toLowerCase() || '').includes(contractorName.toLowerCase()) ||
+                                                                    (c.contractor_id?.toLowerCase() || '').includes(contractorName.toLowerCase())
+                                                                ).length === 0 && (
+                                                                        <div className="px-4 py-4 text-center text-sm text-slate-500">
+                                                                            No matching contractors found.
+                                                                            <br />
+                                                                            <span className="text-xs text-slate-400">Can be added as new.</span>
+                                                                        </div>
+                                                                    )}
+                                                            </div>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* Customer Phone */}
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
+                                                    Phone Number <span className="text-red-500">*</span>
+                                                </label>
+                                                <div className="relative">
+                                                    <input
+                                                        type="tel"
+                                                        value={customerPhone}
+                                                        onChange={(e) => {
+                                                            const value = e.target.value.replace(/\D/g, '');
+                                                            if (value.length <= 10) {
+                                                                setCustomerPhone(value);
+                                                            }
+                                                        }}
+                                                        required
+                                                        className="block w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none text-sm font-medium text-slate-800 placeholder:text-slate-400 tabular-nums"
+                                                        placeholder="10-digit mobile number"
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            {/* Nickname (Only for Contractor and Mistry) */}
+                                            {/* Nickname (Only for Contractor and Mistry) - Hidden if existing contractor found (cannot add nickname to existing) */}
+                                            {(customerType === 'Contractor' || customerType === 'Mistry') && !existingContractor && (
+                                                <div className="animate-in fade-in slide-in-from-top-2">
+                                                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
+                                                        Nickname <span className="text-slate-400 font-normal normal-case tracking-normal">(Market Name)</span> <span className="text-red-500">*</span>
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        value={nickname}
+                                                        onChange={(e) => setNickname(e.target.value)}
+                                                        className="block w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none text-sm font-medium text-slate-800 placeholder:text-slate-400"
+                                                        placeholder="e.g. Nillu"
+                                                    />
+                                                </div>
+                                            )}
+
+                                            {/* Mistry Name (Only for Mistry) */}
+                                            {customerType === 'Mistry' && (
+                                                <div className="animate-in fade-in slide-in-from-top-2">
+                                                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Mistry Name <span className="text-red-500">*</span></label>
+                                                    <input
+                                                        type="text"
+                                                        value={mistryName}
+                                                        onChange={(e) => setMistryName(e.target.value)}
+                                                        required={customerType === 'Mistry'}
+                                                        className="block w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none text-sm font-medium text-slate-800 placeholder:text-slate-400"
+                                                        placeholder="Enter Mistry Name"
+                                                    />
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div className="h-px bg-slate-100 w-full"></div>
+
+                                    {/* Section 2: Delivery & Site Details */}
+                                    <div className="space-y-6">
+                                        <div className="flex items-center gap-3">
+                                            <div className="h-8 w-8 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600">
+                                                <MapPin size={16} />
+                                            </div>
+                                            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Delivery & Site Details</h3>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
+
+                                            {/* State & City */}
+                                            <div className="grid grid-cols-2 gap-4">
+                                                {/* State Selection */}
+                                                <div>
+                                                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">State <span className="text-red-500">*</span></label>
+                                                    <div className="relative" ref={stateWrapperRef}>
+                                                        <div
+                                                            onClick={() => !areLocationsLocked && setShowStateDropdown(!showStateDropdown)}
+                                                            className={`block w-full px-4 py-3 border border-slate-200 rounded-xl transition-all text-sm font-medium flex items-center justify-between ${areLocationsLocked
+                                                                ? 'bg-slate-100 cursor-not-allowed text-slate-500'
+                                                                : 'bg-slate-50 cursor-pointer hover:bg-white focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary'
                                                                 }`}
                                                         >
-                                                            {type}
-                                                        </button>
-                                                    );
-                                                })}
-                                                {(contractorName || customerType) && (
-                                                    <button
-                                                        type="button"
-                                                        onClick={handleClearCustomer}
-                                                        className="px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 hover:border-red-200 flex items-center gap-2"
-                                                    >
-                                                        <X size={14} />
-                                                        Clear
-                                                    </button>
-                                                )}
-                                            </div>
-                                            {!customerType && <p className="text-xs text-amber-600 mt-2 font-medium flex items-center gap-1"><span className="w-1 h-1 rounded-full bg-amber-600"></span> Please select a customer type</p>}
-                                        </div>
+                                                            <span className={selectedState ? "text-slate-800" : "text-slate-400"}>
+                                                                {selectedState || "Select State"}
+                                                            </span>
+                                                            {!areLocationsLocked && <ChevronDown size={14} className={`text-slate-400 transition-transform ${showStateDropdown ? 'rotate-180' : ''}`} />}
+                                                            {areLocationsLocked && <div className="text-[10px] px-1.5 py-0.5 bg-slate-200 rounded text-slate-500">Locked</div>}
+                                                        </div>
 
-                                        {/* Contractor Name */}
-                                        <div className="relative">
-                                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
-                                                Contractor Name
-                                            </label>
-                                            <div className="relative group">
-                                                <input
-                                                    type="text"
-                                                    value={contractorName}
-                                                    onChange={(e) => {
-                                                        setContractorName(e.target.value);
-                                                        setShowContractorDropdown(true);
-                                                    }}
-                                                    onFocus={() => setShowContractorDropdown(true)}
-                                                    required
-                                                    className="block w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none text-sm font-medium text-slate-800 placeholder:text-slate-400"
-                                                    placeholder="Search or enter name..."
-                                                />
-                                                <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-slate-400 group-focus-within:text-primary transition-colors">
-                                                    <Search size={16} />
-                                                </div>
-
-                                                {/* Contractor Dropdown */}
-                                                {showContractorDropdown && (contractorName || availableContractors.length > 0) && (
-                                                    <>
-                                                        <div
-                                                            className="fixed inset-0 z-10"
-                                                            onClick={() => setShowContractorDropdown(false)}
-                                                        ></div>
-                                                        <div
-                                                            ref={contractorDropdown.ref}
-                                                            className={`absolute z-20 w-full bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-y-auto custom-scrollbar flex flex-col animate-in fade-in zoom-in-95 duration-100 ${contractorDropdown.positionClass}`}
-                                                        >
-                                                            {availableContractors
-                                                                .filter(c => c.contractor_name.toLowerCase().includes(contractorName.toLowerCase()))
-                                                                .map((contractor, idx) => (
-                                                                    <div
-                                                                        key={idx}
-                                                                        className="px-4 py-3 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0 group"
-                                                                        onClick={() => {
-                                                                            setContractorName(contractor.contractor_name);
-                                                                            if (contractor.customer_phone) setCustomerPhone(contractor.customer_phone);
-                                                                            if (contractor.customer_type) setCustomerType(contractor.customer_type);
-                                                                            if (contractor.nickname) setNickname(contractor.nickname);
-                                                                            if (contractor.mistry_name) setMistryName(contractor.mistry_name);
-
-                                                                            // Pre-fill other fields from most recent order
-                                                                            if (contractor.site_contact_number) setSitePoc(contractor.site_contact_number);
-                                                                            if (contractor.delivery_address) setDeliveryAddress(contractor.delivery_address);
-                                                                            if (contractor.point_of_contact_role) setPointRole(contractor.point_of_contact_role);
-                                                                            if (contractor.payment_terms) setPaymentTerms(contractor.payment_terms);
-                                                                            if (contractor.manual_payment_days) setManualPaymentDays(String(contractor.manual_payment_days));
-                                                                            if (contractor.logistics_mode) setLogistics(contractor.logistics_mode);
-                                                                            if (contractor.state) setSelectedState(contractor.state);
-                                                                            if (contractor.city) setSelectedCity(contractor.city);
-                                                                            if (contractor.challan_reference) setChallanName(contractor.challan_reference);
-
-                                                                            setShowContractorDropdown(false);
-                                                                        }}
-                                                                    >
-                                                                        <div className="flex justify-between items-center">
-                                                                            <span className="text-sm font-bold text-slate-700 group-hover:text-primary transition-colors">
-                                                                                {contractor.contractor_name}
-                                                                                {contractor.customer_type === 'Contractor' && contractor.nickname && <span className="text-slate-400 font-normal ml-1">({contractor.nickname})</span>}
-                                                                            </span>
-                                                                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200 uppercase tracking-wide">{contractor.customer_type || 'Unknown'}</span>
+                                                        {/* Dropdown */}
+                                                        {showStateDropdown && (
+                                                            <>
+                                                                <div
+                                                                    ref={stateDropdown.ref}
+                                                                    className={`absolute z-20 w-full bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-100 min-w-[200px] ${stateDropdown.positionClass}`}
+                                                                >
+                                                                    {/* Search Bar */}
+                                                                    <div className="p-2 border-b border-slate-100 bg-slate-50 sticky top-0">
+                                                                        <div className="relative">
+                                                                            <Search size={14} className="absolute left-2.5 top-2.5 text-slate-400" />
+                                                                            <input
+                                                                                type="text"
+                                                                                value={stateSearch}
+                                                                                onChange={(e) => setStateSearch(e.target.value)}
+                                                                                placeholder="Search..."
+                                                                                className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-md focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+                                                                                autoFocus
+                                                                                onClick={(e) => e.stopPropagation()}
+                                                                            />
                                                                         </div>
-                                                                        {(contractor.customer_phone || (contractor.customer_type === 'Mistry' && contractor.contractor_id)) && (
-                                                                            <div className="text-xs text-slate-500 mt-1 flex items-center gap-2">
-                                                                                {contractor.customer_phone && (
-                                                                                    <span className="flex items-center gap-1">
-                                                                                        <Phone size={10} />
-                                                                                        {contractor.customer_phone}
-                                                                                    </span>
-                                                                                )}
-                                                                                {/* For Mistry, show linked Contractor Name derived from ID */}
-                                                                                {contractor.customer_type === 'Mistry' && contractor.contractor_id && (
-                                                                                    <span className="flex items-center gap-1 text-slate-400">
-                                                                                        • {contractor.contractor_id.split('/')[3]?.split('-')[0]}
-                                                                                    </span>
-                                                                                )}
+                                                                    </div>
+
+                                                                    {/* List */}
+                                                                    <div className="overflow-y-auto flex-1 p-1 custom-scrollbar">
+                                                                        {filteredStates.length > 0 ? (
+                                                                            filteredStates.map(state => (
+                                                                                <div
+                                                                                    key={state}
+                                                                                    className={`px-3 py-2 rounded-md cursor-pointer text-sm transition-colors ${selectedState === state
+                                                                                        ? 'bg-primary/5 text-primary font-bold'
+                                                                                        : 'text-slate-600 hover:bg-slate-50'
+                                                                                        }`}
+                                                                                    onClick={() => {
+                                                                                        setSelectedState(state);
+                                                                                        setSelectedCity('');
+                                                                                        setStateSearch('');
+                                                                                        setShowStateDropdown(false);
+                                                                                    }}
+                                                                                >
+                                                                                    {state}
+                                                                                </div>
+                                                                            ))
+                                                                        ) : (
+                                                                            <div className="px-3 py-4 text-center text-xs text-slate-400">
+                                                                                No state found
                                                                             </div>
                                                                         )}
                                                                     </div>
-                                                                ))
-                                                            }
-                                                            {availableContractors.filter(c => c.contractor_name.toLowerCase().includes(contractorName.toLowerCase())).length === 0 && (
-                                                                <div className="px-4 py-4 text-center text-sm text-slate-500">
-                                                                    No matching contractors found.
-                                                                    <br />
-                                                                    <span className="text-xs text-slate-400">Can be added as new.</span>
                                                                 </div>
-                                                            )}
-                                                        </div>
-                                                    </>
-                                                )}
-                                            </div>
-                                        </div>
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                </div>
 
-                                        {/* Customer Phone */}
-                                        <div>
-                                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
-                                                Phone Number
-                                            </label>
-                                            <div className="relative">
+                                                {/* City Selection */}
+                                                <div>
+                                                    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">City <span className="text-red-500">*</span></label>
+                                                    <div className="relative" ref={cityWrapperRef}>
+                                                        <div
+                                                            onClick={() => {
+                                                                if (areLocationsLocked) return;
+                                                                !selectedState ? toast.error('Please select a state first') : setShowCityDropdown(!showCityDropdown)
+                                                            }}
+                                                            className={`block w-full px-4 py-3 border border-slate-200 rounded-xl transition-all text-sm font-medium flex items-center justify-between ${areLocationsLocked
+                                                                ? 'bg-slate-100 cursor-not-allowed text-slate-500'
+                                                                : !selectedState
+                                                                    ? 'bg-slate-50 cursor-not-allowed opacity-60'
+                                                                    : 'bg-slate-50 cursor-pointer hover:bg-white focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary'
+                                                                }`}
+                                                        >
+                                                            <span className={selectedCity ? "text-slate-800" : "text-slate-400"}>
+                                                                {selectedCity || "Select City"}
+                                                            </span>
+                                                            {!areLocationsLocked && <ChevronDown size={14} className={`text-slate-400 transition-transform ${showCityDropdown ? 'rotate-180' : ''}`} />}
+                                                            {areLocationsLocked && <div className="text-[10px] px-1.5 py-0.5 bg-slate-200 rounded text-slate-500">Locked</div>}
+                                                        </div>
+
+                                                        {/* Dropdown */}
+                                                        {showCityDropdown && selectedState && (
+                                                            <>
+                                                                <div
+                                                                    ref={cityDropdown.ref}
+                                                                    className={`absolute z-20 w-full bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-100 min-w-[200px] ${cityDropdown.positionClass}`}
+                                                                >
+                                                                    {/* Search Bar */}
+                                                                    <div className="p-2 border-b border-slate-100 bg-slate-50 sticky top-0">
+                                                                        <div className="relative">
+                                                                            <Search size={14} className="absolute left-2.5 top-2.5 text-slate-400" />
+                                                                            <input
+                                                                                type="text"
+                                                                                value={citySearch}
+                                                                                onChange={(e) => setCitySearch(e.target.value)}
+                                                                                placeholder="Search..."
+                                                                                className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-md focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+                                                                                autoFocus
+                                                                                onClick={(e) => e.stopPropagation()}
+                                                                            />
+                                                                        </div>
+                                                                    </div>
+
+                                                                    {/* List */}
+                                                                    <div className="overflow-y-auto flex-1 p-1 custom-scrollbar">
+                                                                        {filteredCities.length > 0 ? (
+                                                                            filteredCities.map(city => (
+                                                                                <div
+                                                                                    key={city}
+                                                                                    className={`px-3 py-2 rounded-md cursor-pointer text-sm transition-colors ${selectedCity === city
+                                                                                        ? 'bg-primary/5 text-primary font-bold'
+                                                                                        : 'text-slate-600 hover:bg-slate-50'
+                                                                                        }`}
+                                                                                    onClick={() => {
+                                                                                        setSelectedCity(city);
+                                                                                        setCitySearch('');
+                                                                                        setShowCityDropdown(false);
+                                                                                    }}
+                                                                                >
+                                                                                    {city}
+                                                                                </div>
+                                                                            ))
+                                                                        ) : (
+                                                                            <div className="px-3 py-4 text-center text-xs text-slate-400">
+                                                                                No city found
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Delivery Address */}
+                                            <div className="md:row-span-2">
+                                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Delivery Address <span className="text-red-500">*</span></label>
+                                                <div className="relative h-full" ref={addressWrapperRef}>
+                                                    <textarea
+                                                        value={deliveryAddress}
+                                                        onChange={(e) => {
+                                                            setDeliveryAddress(e.target.value);
+                                                            setShowAddressDropdown(true);
+                                                        }}
+                                                        onFocus={() => setShowAddressDropdown(true)}
+                                                        rows="4"
+                                                        className="block w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none text-sm font-medium text-slate-800 placeholder:text-slate-400 resize-none h-full min-h-[120px]"
+                                                        placeholder="Enter full address (or select existing)..."
+                                                    ></textarea>
+
+                                                    {/* Address Dropdown */}
+                                                    {showAddressDropdown && (deliveryAddress || availableAddresses.length > 0) && (
+                                                        <>
+                                                            <div
+                                                                ref={addressDropdown.ref}
+                                                                className={`absolute z-20 w-full bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-y-auto custom-scrollbar flex flex-col animate-in fade-in zoom-in-95 duration-100 ${addressDropdown.positionClass}`}
+                                                            >
+                                                                {availableAddresses
+                                                                    .filter(addr => addr.toLowerCase().includes(deliveryAddress.toLowerCase()))
+                                                                    .map((addr, idx) => (
+                                                                        <div
+                                                                            key={idx}
+                                                                            className="px-4 py-3 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0 group"
+                                                                            onClick={() => {
+                                                                                setDeliveryAddress(addr);
+                                                                                setShowAddressDropdown(false);
+                                                                            }}
+                                                                        >
+                                                                            <span className="text-sm text-slate-600 group-hover:text-primary transition-colors font-medium">{addr}</span>
+                                                                        </div>
+                                                                    ))
+                                                                }
+                                                                {availableAddresses.filter(addr => addr.toLowerCase().includes(deliveryAddress.toLowerCase())).length === 0 && (
+                                                                    <div className="px-4 py-4 text-center text-sm text-slate-500">
+                                                                        No matching address found.
+                                                                        <br />
+                                                                        <span className="text-xs text-slate-400">Can be added as new.</span>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* Site POC */}
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Site Contact (POC) <span className="text-red-500">*</span></label>
                                                 <input
                                                     type="tel"
-                                                    value={customerPhone}
+                                                    value={sitePoc}
                                                     onChange={(e) => {
                                                         const value = e.target.value.replace(/\D/g, '');
                                                         if (value.length <= 10) {
-                                                            setCustomerPhone(value);
+                                                            setSitePoc(value);
                                                         }
                                                     }}
-                                                    required
                                                     className="block w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none text-sm font-medium text-slate-800 placeholder:text-slate-400 tabular-nums"
-                                                    placeholder="10-digit mobile number"
+                                                    placeholder="POC Mobile Number"
+                                                />
+                                            </div>
+
+                                            {/* Challan Name */}
+                                            <div>
+                                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Challan Reference Name <span className="text-red-500">*</span></label>
+                                                <input
+                                                    type="text"
+                                                    value={challanName}
+                                                    onChange={(e) => setChallanName(e.target.value)}
+                                                    className="block w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none text-sm font-medium text-slate-800 placeholder:text-slate-400"
+                                                    placeholder="e.g. Site Supervisor"
                                                 />
                                             </div>
                                         </div>
-
-                                        {/* Nickname (Only for Contractor and Mistry) */}
-                                        {/* Nickname (Only for Contractor and Mistry) - Hidden if existing contractor found (cannot add nickname to existing) */}
-                                        {(customerType === 'Contractor' || customerType === 'Mistry') && !existingContractor && (
-                                            <div className="animate-in fade-in slide-in-from-top-2">
-                                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
-                                                    Nickname <span className="text-slate-400 font-normal normal-case tracking-normal">(Market Name)</span>
-                                                </label>
-                                                <input
-                                                    type="text"
-                                                    value={nickname}
-                                                    onChange={(e) => setNickname(e.target.value)}
-                                                    className="block w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none text-sm font-medium text-slate-800 placeholder:text-slate-400"
-                                                    placeholder="Optional (e.g. Nillu)"
-                                                />
-                                            </div>
-                                        )}
-
-                                        {/* Mistry Name (Only for Mistry) */}
-                                        {customerType === 'Mistry' && (
-                                            <div className="animate-in fade-in slide-in-from-top-2">
-                                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Mistry Name</label>
-                                                <input
-                                                    type="text"
-                                                    value={mistryName}
-                                                    onChange={(e) => setMistryName(e.target.value)}
-                                                    required={customerType === 'Mistry'}
-                                                    className="block w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none text-sm font-medium text-slate-800 placeholder:text-slate-400"
-                                                    placeholder="Enter Mistry Name"
-                                                />
-                                            </div>
-                                        )}
                                     </div>
                                 </div>
+                            </div>
 
-                                <div className="h-px bg-slate-100 w-full"></div>
-
-                                {/* Section 2: Delivery & Site Details */}
-                                <div className="space-y-6">
-                                    <div className="flex items-center gap-3">
-                                        <div className="h-8 w-8 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600">
-                                            <MapPin size={16} />
+                            {/* Order Items Card */}
+                            <div className="bg-white rounded-2xl shadow-sm border border-slate-200/60">
+                                <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between gap-4">
+                                    <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                                        <div className="bg-white p-1.5 rounded-lg border border-slate-200 shadow-sm text-primary">
+                                            <Package size={18} />
                                         </div>
-                                        <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Delivery & Site Details</h3>
-                                    </div>
-
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
-
-                                        {/* State & City */}
-                                        <div className="grid grid-cols-2 gap-4">
-                                            {/* State Selection */}
-                                            <div>
-                                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">State</label>
-                                                <div className="relative">
-                                                    <div
-                                                        onClick={() => setShowStateDropdown(!showStateDropdown)}
-                                                        className="block w-full px-4 py-3 border border-slate-200 rounded-xl cursor-pointer bg-slate-50 hover:bg-white focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary transition-all text-sm font-medium flex items-center justify-between"
-                                                    >
-                                                        <span className={selectedState ? "text-slate-800" : "text-slate-400"}>
-                                                            {selectedState || "Select State"}
-                                                        </span>
-                                                        <ChevronDown size={14} className={`text-slate-400 transition-transform ${showStateDropdown ? 'rotate-180' : ''}`} />
-                                                    </div>
-
-                                                    {/* Dropdown */}
-                                                    {showStateDropdown && (
-                                                        <>
-                                                            <div
-                                                                className="fixed inset-0 z-10"
-                                                                onClick={() => setShowStateDropdown(false)}
-                                                            ></div>
-                                                            <div
-                                                                ref={stateDropdown.ref}
-                                                                className={`absolute z-20 w-full bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-100 min-w-[200px] ${stateDropdown.positionClass}`}
-                                                            >
-                                                                {/* Search Bar */}
-                                                                <div className="p-2 border-b border-slate-100 bg-slate-50 sticky top-0">
-                                                                    <div className="relative">
-                                                                        <Search size={14} className="absolute left-2.5 top-2.5 text-slate-400" />
-                                                                        <input
-                                                                            type="text"
-                                                                            value={stateSearch}
-                                                                            onChange={(e) => setStateSearch(e.target.value)}
-                                                                            placeholder="Search..."
-                                                                            className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-md focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
-                                                                            autoFocus
-                                                                            onClick={(e) => e.stopPropagation()}
-                                                                        />
-                                                                    </div>
-                                                                </div>
-
-                                                                {/* List */}
-                                                                <div className="overflow-y-auto flex-1 p-1 custom-scrollbar">
-                                                                    {filteredStates.length > 0 ? (
-                                                                        filteredStates.map(state => (
-                                                                            <div
-                                                                                key={state}
-                                                                                className={`px-3 py-2 rounded-md cursor-pointer text-sm transition-colors ${selectedState === state
-                                                                                    ? 'bg-primary/5 text-primary font-bold'
-                                                                                    : 'text-slate-600 hover:bg-slate-50'
-                                                                                    }`}
-                                                                                onClick={() => {
-                                                                                    setSelectedState(state);
-                                                                                    setSelectedCity('');
-                                                                                    setStateSearch('');
-                                                                                    setShowStateDropdown(false);
-                                                                                }}
-                                                                            >
-                                                                                {state}
-                                                                            </div>
-                                                                        ))
-                                                                    ) : (
-                                                                        <div className="px-3 py-4 text-center text-xs text-slate-400">
-                                                                            No state found
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-                                                        </>
-                                                    )}
-                                                </div>
-                                            </div>
-
-                                            {/* City Selection */}
-                                            <div>
-                                                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">City</label>
-                                                <div className="relative">
-                                                    <div
-                                                        onClick={() => !selectedState ? toast.error('Please select a state first') : setShowCityDropdown(!showCityDropdown)}
-                                                        className={`block w-full px-4 py-3 border border-slate-200 rounded-xl bg-slate-50 transition-all text-sm font-medium flex items-center justify-between ${!selectedState ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:bg-white focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary'
-                                                            }`}
-                                                    >
-                                                        <span className={selectedCity ? "text-slate-800" : "text-slate-400"}>
-                                                            {selectedCity || "Select City"}
-                                                        </span>
-                                                        <ChevronDown size={14} className={`text-slate-400 transition-transform ${showCityDropdown ? 'rotate-180' : ''}`} />
-                                                    </div>
-
-                                                    {/* Dropdown */}
-                                                    {showCityDropdown && selectedState && (
-                                                        <>
-                                                            <div
-                                                                className="fixed inset-0 z-10"
-                                                                onClick={() => setShowCityDropdown(false)}
-                                                            ></div>
-                                                            <div
-                                                                ref={cityDropdown.ref}
-                                                                className={`absolute z-20 w-full bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-100 min-w-[200px] ${cityDropdown.positionClass}`}
-                                                            >
-                                                                {/* Search Bar */}
-                                                                <div className="p-2 border-b border-slate-100 bg-slate-50 sticky top-0">
-                                                                    <div className="relative">
-                                                                        <Search size={14} className="absolute left-2.5 top-2.5 text-slate-400" />
-                                                                        <input
-                                                                            type="text"
-                                                                            value={citySearch}
-                                                                            onChange={(e) => setCitySearch(e.target.value)}
-                                                                            placeholder="Search..."
-                                                                            className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-md focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
-                                                                            autoFocus
-                                                                            onClick={(e) => e.stopPropagation()}
-                                                                        />
-                                                                    </div>
-                                                                </div>
-
-                                                                {/* List */}
-                                                                <div className="overflow-y-auto flex-1 p-1 custom-scrollbar">
-                                                                    {filteredCities.length > 0 ? (
-                                                                        filteredCities.map(city => (
-                                                                            <div
-                                                                                key={city}
-                                                                                className={`px-3 py-2 rounded-md cursor-pointer text-sm transition-colors ${selectedCity === city
-                                                                                    ? 'bg-primary/5 text-primary font-bold'
-                                                                                    : 'text-slate-600 hover:bg-slate-50'
-                                                                                    }`}
-                                                                                onClick={() => {
-                                                                                    setSelectedCity(city);
-                                                                                    setCitySearch('');
-                                                                                    setShowCityDropdown(false);
-                                                                                }}
-                                                                            >
-                                                                                {city}
-                                                                            </div>
-                                                                        ))
-                                                                    ) : (
-                                                                        <div className="px-3 py-4 text-center text-xs text-slate-400">
-                                                                            No city found
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-                                                        </>
-                                                    )}
-                                                </div>
-                                            </div>
+                                        Order Items
+                                    </h2>
+                                    <button
+                                        type="button"
+                                        onClick={handleAddItem}
+                                        className="text-xs font-bold text-primary hover:text-primary/80 transition-colors flex items-center gap-1.5 bg-white px-3 py-2 rounded-lg border border-primary/20 shadow-sm hover:border-primary/50 hover:shadow-md active:scale-95"
+                                    >
+                                        <div className="w-4 h-4 rounded-full bg-primary/10 flex items-center justify-center">
+                                            <Plus size={10} strokeWidth={3} />
                                         </div>
+                                        ADD ITEM
+                                    </button>
+                                </div>
 
-                                        {/* Delivery Address */}
-                                        <div className="md:row-span-2">
-                                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Delivery Address</label>
-                                            <div className="relative h-full">
-                                                <textarea
-                                                    value={deliveryAddress}
-                                                    onChange={(e) => {
-                                                        setDeliveryAddress(e.target.value);
-                                                        setShowAddressDropdown(true);
-                                                    }}
-                                                    onFocus={() => setShowAddressDropdown(true)}
-                                                    rows="4"
-                                                    className="block w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none text-sm font-medium text-slate-800 placeholder:text-slate-400 resize-none h-full min-h-[120px]"
-                                                    placeholder="Enter full address (or select existing)..."
-                                                ></textarea>
+                                <div className="p-6">
+                                    <div className="space-y-3">
+                                        {/* Items Header */}
+                                        <div className="hidden sm:grid grid-cols-12 gap-3 px-3 mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                                            <div className="col-span-12 sm:col-span-5">Product Details</div>
+                                            <div className="col-span-5 sm:col-span-2">Quantity</div>
+                                            <div className="col-span-5 sm:col-span-2">Price</div>
+                                            <div className="col-span-5 sm:col-span-2">Points</div>
+                                            <div className="col-span-2 sm:col-span-1"></div>
+                                        </div>
+                                        {items.map((item, index) => (
+                                            <div key={item.id} className="group relative grid grid-cols-12 gap-3 items-start p-3 rounded-xl border border-slate-100 bg-slate-50/50 hover:border-primary/20 hover:bg-white hover:shadow-sm transition-all duration-200">
 
-                                                {/* Address Dropdown */}
-                                                {showAddressDropdown && (deliveryAddress || availableAddresses.length > 0) && (
-                                                    <>
+                                                {/* Product Name */}
+                                                <div className="col-span-12 sm:col-span-5">
+                                                    <label className="block text-xs font-semibold text-slate-500 mb-1 sm:hidden uppercase">Product</label>
+                                                    <div className="relative item-dropdown-wrapper">
                                                         <div
-                                                            className="fixed inset-0 z-10"
-                                                            onClick={() => setShowAddressDropdown(false)}
-                                                        ></div>
-                                                        <div
-                                                            ref={addressDropdown.ref}
-                                                            className={`absolute z-20 w-full bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-y-auto custom-scrollbar flex flex-col animate-in fade-in zoom-in-95 duration-100 ${addressDropdown.positionClass}`}
+                                                            onClick={() => toggleItemDropdown(item.id)}
+                                                            className="w-full pl-3 pr-10 py-2.5 bg-white border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50 flex items-center justify-between transition-all"
                                                         >
-                                                            {availableAddresses
-                                                                .filter(addr => addr.toLowerCase().includes(deliveryAddress.toLowerCase()))
-                                                                .map((addr, idx) => (
-                                                                    <div
-                                                                        key={idx}
-                                                                        className="px-4 py-3 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0 group"
-                                                                        onClick={() => {
-                                                                            setDeliveryAddress(addr);
-                                                                            setShowAddressDropdown(false);
-                                                                        }}
-                                                                    >
-                                                                        <span className="text-sm text-slate-600 group-hover:text-primary transition-colors font-medium">{addr}</span>
-                                                                    </div>
-                                                                ))
-                                                            }
-                                                            {availableAddresses.filter(addr => addr.toLowerCase().includes(deliveryAddress.toLowerCase())).length === 0 && (
-                                                                <div className="px-4 py-4 text-center text-sm text-slate-500">
-                                                                    No matching address found.
-                                                                    <br />
-                                                                    <span className="text-xs text-slate-400">Can be added as new.</span>
-                                                                </div>
-                                                            )}
+                                                            <span className={`text-sm font-medium ${item.product ? 'text-slate-800' : 'text-slate-400'}`}>
+                                                                {item.product || 'Select Product...'}
+                                                            </span>
+                                                            <ChevronDown size={14} className="text-slate-400" />
                                                         </div>
-                                                    </>
-                                                )}
+
+                                                        {item.showDropdown && (
+                                                            <>
+                                                                <div className="absolute z-20 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-y-auto custom-scrollbar flex flex-col animate-in fade-in zoom-in-95 duration-100 min-w-[200px]">
+                                                                    {PRODUCTS.map((p, idx) => (
+                                                                        <div
+                                                                            key={idx}
+                                                                            className="px-4 py-3 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0"
+                                                                            onClick={() => {
+                                                                                setItems(items.map(i =>
+                                                                                    i.id === item.id
+                                                                                        ? { ...i, product: p.name, showDropdown: false }
+                                                                                        : i
+                                                                                ));
+                                                                            }}
+                                                                        >
+                                                                            <div className="flex justify-between items-center">
+                                                                                <span className={`text-sm font-medium ${item.product === p.name ? 'text-primary uppercase font-bold' : 'text-slate-700'}`}>
+                                                                                    {p.name}
+                                                                                </span>
+                                                                            </div>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                </div>
+
+                                                {/* Quantity */}
+                                                <div className="col-span-5 sm:col-span-2">
+                                                    <label className="block text-xs font-semibold text-slate-500 mb-1 sm:hidden uppercase">Qty</label>
+                                                    <input
+                                                        type="number"
+                                                        min="1"
+                                                        value={item.quantity || ''}
+                                                        onChange={(e) => handleItemChange(item.id, 'quantity', parseInt(e.target.value) || 0)}
+                                                        className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none text-sm font-medium transition-all"
+                                                        required
+                                                    />
+                                                </div>
+
+                                                {/* Price */}
+                                                <div className="col-span-5 sm:col-span-2">
+                                                    <label className="block text-xs font-semibold text-slate-500 mb-1 sm:hidden uppercase">Price</label>
+                                                    <div className="relative">
+                                                        <span className="absolute left-3 top-2.5 text-slate-400 text-sm">₹</span>
+                                                        <input
+                                                            type="number"
+                                                            min="0"
+                                                            step="0.01"
+                                                            value={item.price || ''}
+                                                            onChange={(e) => handleItemChange(item.id, 'price', parseFloat(e.target.value) || 0)}
+                                                            className="w-full pl-6 pr-2 py-2.5 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none text-sm font-medium transition-all"
+                                                            required
+                                                        />
+                                                    </div>
+                                                </div>
+
+                                                {/* Points */}
+                                                <div className="col-span-5 sm:col-span-2">
+                                                    <label className="block text-xs font-semibold text-slate-500 mb-1 sm:hidden uppercase">Points</label>
+                                                    <div className="relative">
+                                                        <span className="absolute left-3 top-2.5 text-slate-400 text-sm font-bold">P</span>
+                                                        <input
+                                                            type="number"
+                                                            min="0"
+                                                            value={item.points || ''}
+                                                            onChange={(e) => handleItemChange(item.id, 'points', parseInt(e.target.value) || 0)}
+                                                            className="w-full pl-6 pr-2 py-2.5 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none text-sm font-medium transition-all text-blue-600"
+                                                            placeholder="0"
+                                                        />
+                                                    </div>
+                                                </div>
+
+                                                {/* Remove Button */}
+                                                <div className="col-span-2 sm:col-span-1 flex justify-end pt-2 sm:pt-1">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleRemoveItem(item.id)}
+                                                        disabled={items.length === 1}
+                                                        className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-400"
+                                                    >
+                                                        <Trash2 size={16} />
+                                                    </button>
+                                                </div>
                                             </div>
-                                        </div>
+                                        ))}
+                                    </div>
 
-                                        {/* Site POC */}
-                                        <div>
-                                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Site Contact (POC)</label>
-                                            <input
-                                                type="tel"
-                                                value={sitePoc}
-                                                onChange={(e) => {
-                                                    const value = e.target.value.replace(/\D/g, '');
-                                                    if (value.length <= 10) {
-                                                        setSitePoc(value);
-                                                    }
-                                                }}
-                                                className="block w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none text-sm font-medium text-slate-800 placeholder:text-slate-400 tabular-nums"
-                                                placeholder="POC Mobile Number"
-                                            />
-                                        </div>
-
-                                        {/* Challan Name */}
-                                        <div>
-                                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Challan Reference Name</label>
-                                            <input
-                                                type="text"
-                                                value={challanName}
-                                                onChange={(e) => setChallanName(e.target.value)}
-                                                className="block w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none text-sm font-medium text-slate-800 placeholder:text-slate-400"
-                                                placeholder="e.g. Site Supervisor"
-                                            />
+                                    {/* Total */}
+                                    <div className="mt-8 flex justify-end items-center gap-4 border-t border-slate-100 pt-6">
+                                        <div className="text-right">
+                                            <span className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Total Amount</span>
+                                            <span className="text-3xl font-bold text-slate-800 tracking-tight">₹ {orderService.calculateOrderTotal(items).toLocaleString()}</span>
                                         </div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
 
-                        {/* Order Items Card */}
-                        <div className="bg-white rounded-2xl shadow-sm border border-slate-200/60">
-                            <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between gap-4">
-                                <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                                    <div className="bg-white p-1.5 rounded-lg border border-slate-200 shadow-sm text-primary">
-                                        <Package size={18} />
-                                    </div>
-                                    Order Items
-                                </h2>
-                                <button
-                                    type="button"
-                                    onClick={handleAddItem}
-                                    className="text-xs font-bold text-primary hover:text-primary/80 transition-colors flex items-center gap-1.5 bg-white px-3 py-2 rounded-lg border border-primary/20 shadow-sm hover:border-primary/50 hover:shadow-md active:scale-95"
-                                >
-                                    <div className="w-4 h-4 rounded-full bg-primary/10 flex items-center justify-center">
-                                        <Plus size={10} strokeWidth={3} />
-                                    </div>
-                                    ADD ITEM
-                                </button>
-                            </div>
+                            {/* Points Allocation & Logistics */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
-                            <div className="p-6">
-                                <div className="space-y-3">
-                                    {/* Items Header */}
-                                    <div className="hidden sm:grid grid-cols-12 gap-3 px-3 mb-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                                        <div className="col-span-12 sm:col-span-5">Product Details</div>
-                                        <div className="col-span-5 sm:col-span-2">Quantity</div>
-                                        <div className="col-span-5 sm:col-span-2">Price</div>
-                                        <div className="col-span-5 sm:col-span-2">Points</div>
-                                        <div className="col-span-2 sm:col-span-1"></div>
+                                {/* Points Allocation */}
+                                <div className="bg-white rounded-2xl shadow-sm border border-slate-200/60 h-full flex flex-col">
+                                    <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center gap-3 justify-between">
+                                        <div className="flex items-center gap-3">
+                                            <div className="bg-white p-1.5 rounded-lg border border-slate-200 shadow-sm text-primary">
+                                                <Award size={18} />
+                                            </div>
+                                            <h2 className="text-lg font-bold text-slate-800">Points Allocation</h2>
+                                        </div>
+                                        <div className="flex flex-col items-end">
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Remaining</span>
+                                            <span className={`text-lg font-bold ${remainingPoints === 0 ? 'text-emerald-600' : 'text-amber-500'}`}>
+                                                {remainingPoints} / {totalOrderPoints}
+                                            </span>
+                                        </div>
                                     </div>
-                                    {items.map((item, index) => (
-                                        <div key={item.id} className="group relative grid grid-cols-12 gap-3 items-start p-3 rounded-xl border border-slate-100 bg-slate-50/50 hover:border-primary/20 hover:bg-white hover:shadow-sm transition-all duration-200">
+                                    <div className="p-6 flex-1 flex flex-col gap-4">
 
-                                            {/* Product Name */}
-                                            <div className="col-span-12 sm:col-span-5">
-                                                <label className="block text-xs font-semibold text-slate-500 mb-1 sm:hidden uppercase">Product</label>
-                                                <div className="relative">
+                                        {/* Allocation Form */}
+                                        <div className="space-y-3 p-4 bg-slate-50 rounded-xl border border-slate-100">
+
+                                            {/* Role Select & User Load */}
+                                            {/* Role Select & User Load */}
+                                            <div className="flex gap-3">
+                                                {/* Existing User Dropdown */}
+                                                <div className="relative flex-1" ref={beneficiaryWrapperRef}>
                                                     <div
-                                                        onClick={() => toggleItemDropdown(item.id)}
-                                                        className="w-full pl-3 pr-10 py-2.5 bg-white border border-slate-200 rounded-lg cursor-pointer hover:bg-slate-50 flex items-center justify-between transition-all"
+                                                        onClick={() => setShowBeneficiaryDropdown(!showBeneficiaryDropdown)}
+                                                        className="block w-full px-4 py-2 bg-white border border-slate-200 rounded-lg cursor-pointer hover:border-primary/50 transition-all text-sm font-medium flex items-center justify-between"
                                                     >
-                                                        <span className={`text-sm font-medium ${item.product ? 'text-slate-800' : 'text-slate-400'}`}>
-                                                            {item.product || 'Select Product...'}
+                                                        <span className={isExistingBeneficiary ? "text-slate-800" : "text-slate-400"}>
+                                                            {isExistingBeneficiary && currentAllocation.name ? currentAllocation.name : "Load User"}
                                                         </span>
-                                                        <ChevronDown size={14} className="text-slate-400" />
+                                                        <div className="flex items-center gap-1">
+                                                            <User size={14} className="text-slate-400" />
+                                                            <ChevronDown size={14} className={`text-slate-400 transition-transform ${showBeneficiaryDropdown ? 'rotate-180' : ''}`} />
+                                                        </div>
                                                     </div>
 
-                                                    {item.showDropdown && (
+                                                    {showBeneficiaryDropdown && (
                                                         <>
                                                             <div
-                                                                className="fixed inset-0 z-10"
-                                                                onClick={() => toggleItemDropdown(item.id)}
-                                                            ></div>
-                                                            <div className="absolute z-20 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-y-auto custom-scrollbar flex flex-col animate-in fade-in zoom-in-95 duration-100 min-w-[200px]">
-                                                                {PRODUCTS.map((p, idx) => (
+                                                                ref={beneficiaryDropdown.ref}
+                                                                className={`absolute z-20 w-full bg-white border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto custom-scrollbar mt-1 animate-in fade-in zoom-in-95 duration-100 ${beneficiaryDropdown.positionClass}`}
+                                                            >
+                                                                <div
+                                                                    className="px-4 py-2 hover:bg-slate-50 cursor-pointer border-b border-slate-50 text-sm italic text-slate-500"
+                                                                    onClick={() => {
+                                                                        setIsExistingBeneficiary(false);
+                                                                        setCurrentAllocation({ role: '', name: '', phoneLast4: '', points: currentAllocation.points });
+                                                                        setShowBeneficiaryDropdown(false);
+                                                                    }}
+                                                                >
+                                                                    -- New User --
+                                                                </div>
+                                                                {availableBeneficiaries.map((b, idx) => (
                                                                     <div
                                                                         key={idx}
-                                                                        className="px-4 py-3 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0"
+                                                                        className="px-4 py-2 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0 text-sm text-slate-600"
                                                                         onClick={() => {
-                                                                            setItems(items.map(i =>
-                                                                                i.id === item.id
-                                                                                    ? { ...i, product: p.name, showDropdown: false }
-                                                                                    : i
-                                                                            ));
+                                                                            setCurrentAllocation({
+                                                                                ...currentAllocation,
+                                                                                role: b.role,
+                                                                                name: b.person_name,
+                                                                                phoneLast4: b.phone_last_4
+                                                                            });
+                                                                            setIsExistingBeneficiary(true);
+                                                                            setShowBeneficiaryDropdown(false);
                                                                         }}
                                                                     >
-                                                                        <div className="flex justify-between items-center">
-                                                                            <span className={`text-sm font-medium ${item.product === p.name ? 'text-primary uppercase font-bold' : 'text-slate-700'}`}>
-                                                                                {p.name}
-                                                                            </span>
-                                                                        </div>
+                                                                        <div className="font-semibold">{b.person_name}</div>
+                                                                        <div className="text-[10px] text-slate-400">{b.role}-{b.phone_last_4}</div>
+                                                                    </div>
+                                                                ))}
+                                                                {availableBeneficiaries.length === 0 && (
+                                                                    <div className="px-4 py-2 text-xs text-slate-400 text-center">
+                                                                        No existing users found.
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </>
+                                                    )}
+                                                </div>
+
+                                                {/* Role Select */}
+                                                <div className="relative flex-1" ref={allocationRoleWrapperRef}>
+                                                    <div
+                                                        onClick={() => !isExistingBeneficiary && setShowAllocationRoleDropdown(!showAllocationRoleDropdown)}
+                                                        className={`block w-full px-4 py-2 border border-slate-200 rounded-lg transition-all text-sm font-medium flex items-center justify-between ${isExistingBeneficiary ? 'bg-slate-100 cursor-not-allowed' : 'bg-white cursor-pointer hover:border-primary/50'}`}
+                                                    >
+                                                        <span className={currentAllocation.role ? "text-slate-800" : "text-slate-400"}>
+                                                            {currentAllocation.role || "Select Role"}
+                                                        </span>
+                                                        <ChevronDown size={14} className={`text-slate-400 transition-transform ${showAllocationRoleDropdown ? 'rotate-180' : ''}`} />
+                                                    </div>
+
+                                                    {showAllocationRoleDropdown && !isExistingBeneficiary && (
+                                                        <>
+                                                            <div className="absolute z-20 w-full bg-white border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto custom-scrollbar mt-1 animate-in fade-in zoom-in-95 duration-100">
+                                                                {POINT_ROLES.map(role => (
+                                                                    <div
+                                                                        key={role}
+                                                                        className={`px-4 py-2 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0 text-sm ${currentAllocation.role === role ? 'bg-primary/5 text-primary font-bold' : 'text-slate-600'}`}
+                                                                        onClick={() => {
+                                                                            setCurrentAllocation({ ...currentAllocation, role });
+                                                                            setShowAllocationRoleDropdown(false);
+                                                                        }}
+                                                                    >
+                                                                        {role}
                                                                     </div>
                                                                 ))}
                                                             </div>
@@ -1137,446 +1486,246 @@ const NewOrder = () => {
                                                 </div>
                                             </div>
 
-                                            {/* Quantity */}
-                                            <div className="col-span-5 sm:col-span-2">
-                                                <label className="block text-xs font-semibold text-slate-500 mb-1 sm:hidden uppercase">Qty</label>
+                                            {/* Name & Phone */}
+                                            <div className="grid grid-cols-2 gap-3">
                                                 <input
-                                                    type="number"
-                                                    min="1"
-                                                    value={item.quantity || ''}
-                                                    onChange={(e) => handleItemChange(item.id, 'quantity', parseInt(e.target.value) || 0)}
-                                                    className="w-full px-3 py-2.5 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none text-sm font-medium transition-all"
-                                                    required
+                                                    type="text"
+                                                    placeholder="Person Name"
+                                                    value={currentAllocation.name}
+                                                    onChange={(e) => setCurrentAllocation({ ...currentAllocation, name: e.target.value })}
+                                                    disabled={isExistingBeneficiary}
+                                                    className={`block w-full px-3 py-2 border border-slate-200 rounded-lg focus:border-primary outline-none text-sm ${isExistingBeneficiary ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'bg-white'}`}
+                                                />
+                                                <input
+                                                    type="text"
+                                                    maxLength="4"
+                                                    placeholder="Last 4 digits"
+                                                    value={currentAllocation.phoneLast4}
+                                                    onChange={(e) => {
+                                                        const val = e.target.value.replace(/\D/g, '');
+                                                        setCurrentAllocation({ ...currentAllocation, phoneLast4: val });
+                                                    }}
+                                                    disabled={isExistingBeneficiary}
+                                                    className={`block w-full px-3 py-2 border border-slate-200 rounded-lg focus:border-primary outline-none text-sm ${isExistingBeneficiary ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'bg-white'}`}
                                                 />
                                             </div>
 
-                                            {/* Price */}
-                                            <div className="col-span-5 sm:col-span-2">
-                                                <label className="block text-xs font-semibold text-slate-500 mb-1 sm:hidden uppercase">Price</label>
-                                                <div className="relative">
-                                                    <span className="absolute left-3 top-2.5 text-slate-400 text-sm">₹</span>
-                                                    <input
-                                                        type="number"
-                                                        min="0"
-                                                        step="0.01"
-                                                        value={item.price || ''}
-                                                        onChange={(e) => handleItemChange(item.id, 'price', parseFloat(e.target.value) || 0)}
-                                                        className="w-full pl-6 pr-2 py-2.5 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none text-sm font-medium transition-all"
-                                                        required
-                                                    />
-                                                </div>
-                                            </div>
-
-                                            {/* Points */}
-                                            <div className="col-span-5 sm:col-span-2">
-                                                <label className="block text-xs font-semibold text-slate-500 mb-1 sm:hidden uppercase">Points</label>
-                                                <div className="relative">
-                                                    <span className="absolute left-3 top-2.5 text-slate-400 text-sm font-bold">P</span>
-                                                    <input
-                                                        type="number"
-                                                        min="0"
-                                                        value={item.points || ''}
-                                                        onChange={(e) => handleItemChange(item.id, 'points', parseInt(e.target.value) || 0)}
-                                                        className="w-full pl-6 pr-2 py-2.5 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none text-sm font-medium transition-all text-blue-600"
-                                                        placeholder="0"
-                                                    />
-                                                </div>
-                                            </div>
-
-                                            {/* Remove Button */}
-                                            <div className="col-span-2 sm:col-span-1 flex justify-end pt-2 sm:pt-1">
+                                            {/* Points & Add Button */}
+                                            <div className="flex gap-3">
+                                                <input
+                                                    type="number"
+                                                    placeholder="Points"
+                                                    min="1"
+                                                    max={remainingPoints}
+                                                    value={currentAllocation.points}
+                                                    onChange={(e) => setCurrentAllocation({ ...currentAllocation, points: e.target.value })}
+                                                    className="block w-full px-3 py-2 bg-white border border-slate-200 rounded-lg focus:border-primary outline-none text-sm"
+                                                />
                                                 <button
                                                     type="button"
-                                                    onClick={() => handleRemoveItem(item.id)}
-                                                    disabled={items.length === 1}
-                                                    className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-400"
+                                                    onClick={handleAddAllocation}
+                                                    disabled={!currentAllocation.role || !currentAllocation.name || currentAllocation.phoneLast4.length !== 4 || !currentAllocation.points || parseInt(currentAllocation.points) > remainingPoints}
+                                                    className="px-4 py-2 bg-slate-800 text-white rounded-lg text-xs font-bold uppercase tracking-wider hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                                                 >
-                                                    <Trash2 size={16} />
+                                                    Add
                                                 </button>
                                             </div>
                                         </div>
-                                    ))}
-                                </div>
 
-                                {/* Total */}
-                                <div className="mt-8 flex justify-end items-center gap-4 border-t border-slate-100 pt-6">
-                                    <div className="text-right">
-                                        <span className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Total Amount</span>
-                                        <span className="text-3xl font-bold text-slate-800 tracking-tight">₹ {orderService.calculateOrderTotal(items).toLocaleString()}</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Points Allocation & Logistics */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-
-                            {/* Points Allocation */}
-                            <div className="bg-white rounded-2xl shadow-sm border border-slate-200/60 h-full flex flex-col">
-                                <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center gap-3 justify-between">
-                                    <div className="flex items-center gap-3">
-                                        <div className="bg-white p-1.5 rounded-lg border border-slate-200 shadow-sm text-primary">
-                                            <Award size={18} />
-                                        </div>
-                                        <h2 className="text-lg font-bold text-slate-800">Points Allocation</h2>
-                                    </div>
-                                    <div className="flex flex-col items-end">
-                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Remaining</span>
-                                        <span className={`text-lg font-bold ${remainingPoints === 0 ? 'text-emerald-600' : 'text-amber-500'}`}>
-                                            {remainingPoints} / {totalOrderPoints}
-                                        </span>
-                                    </div>
-                                </div>
-                                <div className="p-6 flex-1 flex flex-col gap-4">
-
-                                    {/* Allocation Form */}
-                                    <div className="space-y-3 p-4 bg-slate-50 rounded-xl border border-slate-100">
-
-                                        {/* Role Select & User Load */}
-                                        {/* Role Select & User Load */}
-                                        <div className="flex gap-3">
-                                            {/* Existing User Dropdown */}
-                                            <div className="relative flex-1">
-                                                <div
-                                                    onClick={() => setShowBeneficiaryDropdown(!showBeneficiaryDropdown)}
-                                                    className="block w-full px-4 py-2 bg-white border border-slate-200 rounded-lg cursor-pointer hover:border-primary/50 transition-all text-sm font-medium flex items-center justify-between"
-                                                >
-                                                    <span className={isExistingBeneficiary ? "text-slate-800" : "text-slate-400"}>
-                                                        {isExistingBeneficiary && currentAllocation.name ? currentAllocation.name : "Load User"}
-                                                    </span>
-                                                    <div className="flex items-center gap-1">
-                                                        <User size={14} className="text-slate-400" />
-                                                        <ChevronDown size={14} className={`text-slate-400 transition-transform ${showBeneficiaryDropdown ? 'rotate-180' : ''}`} />
-                                                    </div>
+                                        {/* Allocations List */}
+                                        <div className="flex-1 overflow-y-auto max-h-[200px] custom-scrollbar space-y-2">
+                                            {pointsAllocations.length === 0 ? (
+                                                <div className="text-center py-8 text-xs text-slate-400 border border-dashed border-slate-200 rounded-xl">
+                                                    No points allocated yet.
                                                 </div>
-
-                                                {showBeneficiaryDropdown && (
-                                                    <>
-                                                        <div className="fixed inset-0 z-10" onClick={() => setShowBeneficiaryDropdown(false)}></div>
-                                                        <div
-                                                            ref={beneficiaryDropdown.ref}
-                                                            className={`absolute z-20 w-full bg-white border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto custom-scrollbar mt-1 animate-in fade-in zoom-in-95 duration-100 ${beneficiaryDropdown.positionClass}`}
-                                                        >
-                                                            <div
-                                                                className="px-4 py-2 hover:bg-slate-50 cursor-pointer border-b border-slate-50 text-sm italic text-slate-500"
-                                                                onClick={() => {
-                                                                    setIsExistingBeneficiary(false);
-                                                                    setCurrentAllocation({ role: '', name: '', phoneLast4: '', points: currentAllocation.points });
-                                                                    setShowBeneficiaryDropdown(false);
-                                                                }}
-                                                            >
-                                                                -- New User --
+                                            ) : (
+                                                pointsAllocations.map(alloc => (
+                                                    <div key={alloc.id} className="flex items-center justify-between p-3 bg-white border border-slate-100 rounded-lg hover:border-primary/20 hover:shadow-sm transition-all group">
+                                                        <div>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-xs font-bold text-slate-700">{alloc.name}</span>
+                                                                <span className="text-[10px] px-1.5 py-0.5 bg-slate-100 rounded text-slate-500 uppercase">{alloc.role}</span>
                                                             </div>
-                                                            {availableBeneficiaries.map((b, idx) => (
-                                                                <div
-                                                                    key={idx}
-                                                                    className="px-4 py-2 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0 text-sm text-slate-600"
-                                                                    onClick={() => {
-                                                                        setCurrentAllocation({
-                                                                            ...currentAllocation,
-                                                                            role: b.role,
-                                                                            name: b.person_name,
-                                                                            phoneLast4: b.phone_last_4
-                                                                        });
-                                                                        setIsExistingBeneficiary(true);
-                                                                        setShowBeneficiaryDropdown(false);
-                                                                    }}
-                                                                >
-                                                                    <div className="font-semibold">{b.person_name}</div>
-                                                                    <div className="text-[10px] text-slate-400">{b.role}-{b.phone_last_4}</div>
-                                                                </div>
-                                                            ))}
-                                                            {availableBeneficiaries.length === 0 && (
-                                                                <div className="px-4 py-2 text-xs text-slate-400 text-center">
-                                                                    No existing users found.
-                                                                </div>
-                                                            )}
+                                                            <div className="text-[10px] text-slate-400 mt-0.5">{alloc.role}-{alloc.phoneLast4}</div>
                                                         </div>
-                                                    </>
-                                                )}
-                                            </div>
-
-                                            {/* Role Select */}
-                                            <div className="relative flex-1">
-                                                <div
-                                                    onClick={() => !isExistingBeneficiary && setShowAllocationRoleDropdown(!showAllocationRoleDropdown)}
-                                                    className={`block w-full px-4 py-2 border border-slate-200 rounded-lg transition-all text-sm font-medium flex items-center justify-between ${isExistingBeneficiary ? 'bg-slate-100 cursor-not-allowed' : 'bg-white cursor-pointer hover:border-primary/50'}`}
-                                                >
-                                                    <span className={currentAllocation.role ? "text-slate-800" : "text-slate-400"}>
-                                                        {currentAllocation.role || "Select Role"}
-                                                    </span>
-                                                    <ChevronDown size={14} className={`text-slate-400 transition-transform ${showAllocationRoleDropdown ? 'rotate-180' : ''}`} />
-                                                </div>
-
-                                                {showAllocationRoleDropdown && !isExistingBeneficiary && (
-                                                    <>
-                                                        <div className="fixed inset-0 z-10" onClick={() => setShowAllocationRoleDropdown(false)}></div>
-                                                        <div className="absolute z-20 w-full bg-white border border-slate-200 rounded-lg shadow-xl max-h-48 overflow-y-auto custom-scrollbar mt-1 animate-in fade-in zoom-in-95 duration-100">
-                                                            {POINT_ROLES.map(role => (
-                                                                <div
-                                                                    key={role}
-                                                                    className={`px-4 py-2 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0 text-sm ${currentAllocation.role === role ? 'bg-primary/5 text-primary font-bold' : 'text-slate-600'}`}
-                                                                    onClick={() => {
-                                                                        setCurrentAllocation({ ...currentAllocation, role });
-                                                                        setShowAllocationRoleDropdown(false);
-                                                                    }}
-                                                                >
-                                                                    {role}
-                                                                </div>
-                                                            ))}
+                                                        <div className="flex items-center gap-3">
+                                                            <span className="text-sm font-bold text-primary">{alloc.points} P</span>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleRemoveAllocation(alloc.id)}
+                                                                className="text-slate-300 hover:text-red-500 transition-colors"
+                                                            >
+                                                                <Trash2 size={14} />
+                                                            </button>
                                                         </div>
-                                                    </>
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        {/* Name & Phone */}
-                                        <div className="grid grid-cols-2 gap-3">
-                                            <input
-                                                type="text"
-                                                placeholder="Person Name"
-                                                value={currentAllocation.name}
-                                                onChange={(e) => setCurrentAllocation({ ...currentAllocation, name: e.target.value })}
-                                                disabled={isExistingBeneficiary}
-                                                className={`block w-full px-3 py-2 border border-slate-200 rounded-lg focus:border-primary outline-none text-sm ${isExistingBeneficiary ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'bg-white'}`}
-                                            />
-                                            <input
-                                                type="text"
-                                                maxLength="4"
-                                                placeholder="Last 4 digits"
-                                                value={currentAllocation.phoneLast4}
-                                                onChange={(e) => {
-                                                    const val = e.target.value.replace(/\D/g, '');
-                                                    setCurrentAllocation({ ...currentAllocation, phoneLast4: val });
-                                                }}
-                                                disabled={isExistingBeneficiary}
-                                                className={`block w-full px-3 py-2 border border-slate-200 rounded-lg focus:border-primary outline-none text-sm ${isExistingBeneficiary ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'bg-white'}`}
-                                            />
-                                        </div>
-
-                                        {/* Points & Add Button */}
-                                        <div className="flex gap-3">
-                                            <input
-                                                type="number"
-                                                placeholder="Points"
-                                                min="1"
-                                                max={remainingPoints}
-                                                value={currentAllocation.points}
-                                                onChange={(e) => setCurrentAllocation({ ...currentAllocation, points: e.target.value })}
-                                                className="block w-full px-3 py-2 bg-white border border-slate-200 rounded-lg focus:border-primary outline-none text-sm"
-                                            />
-                                            <button
-                                                type="button"
-                                                onClick={handleAddAllocation}
-                                                disabled={!currentAllocation.role || !currentAllocation.name || currentAllocation.phoneLast4.length !== 4 || !currentAllocation.points || parseInt(currentAllocation.points) > remainingPoints}
-                                                className="px-4 py-2 bg-slate-800 text-white rounded-lg text-xs font-bold uppercase tracking-wider hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                                            >
-                                                Add
-                                            </button>
+                                                    </div>
+                                                ))
+                                            )}
                                         </div>
                                     </div>
+                                </div>
 
-                                    {/* Allocations List */}
-                                    <div className="flex-1 overflow-y-auto max-h-[200px] custom-scrollbar space-y-2">
-                                        {pointsAllocations.length === 0 ? (
-                                            <div className="text-center py-8 text-xs text-slate-400 border border-dashed border-slate-200 rounded-xl">
-                                                No points allocated yet.
-                                            </div>
-                                        ) : (
-                                            pointsAllocations.map(alloc => (
-                                                <div key={alloc.id} className="flex items-center justify-between p-3 bg-white border border-slate-100 rounded-lg hover:border-primary/20 hover:shadow-sm transition-all group">
-                                                    <div>
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="text-xs font-bold text-slate-700">{alloc.name}</span>
-                                                            <span className="text-[10px] px-1.5 py-0.5 bg-slate-100 rounded text-slate-500 uppercase">{alloc.role}</span>
-                                                        </div>
-                                                        <div className="text-[10px] text-slate-400 mt-0.5">{alloc.role}-{alloc.phoneLast4}</div>
+
+                                {/* Payment & Logistics */}
+                                <div className="bg-white rounded-2xl shadow-sm border border-slate-200/60 h-full">
+                                    <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center gap-3">
+                                        <div className="bg-white p-1.5 rounded-lg border border-slate-200 shadow-sm text-primary">
+                                            <CreditCard size={18} />
+                                        </div>
+                                        <h2 className="text-lg font-bold text-slate-800">Payment & Logistics</h2>
+                                    </div>
+
+                                    <div className="p-6 space-y-5">
+                                        {/* Logistics */}
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Logistics Mode <span className="text-red-500">*</span></label>
+                                            <div className="relative" ref={logisticsWrapperRef}>
+                                                <div
+                                                    onClick={() => setShowLogisticsDropdown(!showLogisticsDropdown)}
+                                                    className="block w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer hover:bg-white focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary transition-all text-sm font-medium flex items-center justify-between relative"
+                                                >
+                                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                                        <Truck size={18} className="text-slate-400" />
                                                     </div>
-                                                    <div className="flex items-center gap-3">
-                                                        <span className="text-sm font-bold text-primary">{alloc.points} P</span>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => handleRemoveAllocation(alloc.id)}
-                                                            className="text-slate-300 hover:text-red-500 transition-colors"
-                                                        >
-                                                            <Trash2 size={14} />
-                                                        </button>
-                                                    </div>
+                                                    <span className={logistics ? "text-slate-800" : "text-slate-400"}>
+                                                        {logistics || "Select Logistics Option"}
+                                                    </span>
+                                                    <ChevronDown size={16} className={`text-slate-400 transition-transform ${showLogisticsDropdown ? 'rotate-180' : ''}`} />
                                                 </div>
-                                            ))
+
+                                                {showLogisticsDropdown && (
+                                                    <>
+                                                        <div
+                                                            ref={logisticsDropdown.ref}
+                                                            className={`absolute z-20 w-full bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-y-auto custom-scrollbar flex flex-col animate-in fade-in zoom-in-95 duration-100 ${logisticsDropdown.positionClass}`}
+                                                        >
+                                                            {['Paid by Customer', 'Paid by Company'].map(opt => (
+                                                                <div
+                                                                    key={opt}
+                                                                    className={`px-4 py-3 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0 ${logistics === opt ? 'bg-primary/5 text-primary font-bold' : 'text-slate-600'}`}
+                                                                    onClick={() => {
+                                                                        setLogistics(opt);
+                                                                        setShowLogisticsDropdown(false);
+                                                                    }}
+                                                                >
+                                                                    {opt}
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Payment Terms */}
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Payment Terms <span className="text-red-500">*</span></label>
+                                            <div className="relative" ref={paymentWrapperRef}>
+                                                <div
+                                                    onClick={() => setShowPaymentDropdown(!showPaymentDropdown)}
+                                                    className="block w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer hover:bg-white focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary transition-all text-sm font-medium flex items-center justify-between relative"
+                                                >
+                                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                                        <CreditCard size={18} className="text-slate-400" />
+                                                    </div>
+                                                    <span className={paymentTerms ? "text-slate-800" : "text-slate-400"}>
+                                                        {paymentTerms || "Select Payment Terms"}
+                                                    </span>
+                                                    <ChevronDown size={16} className={`text-slate-400 transition-transform ${showPaymentDropdown ? 'rotate-180' : ''}`} />
+                                                </div>
+
+                                                {showPaymentDropdown && (
+                                                    <>
+                                                        <div
+                                                            ref={paymentDropdown.ref}
+                                                            className={`absolute z-20 w-full bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-y-auto custom-scrollbar flex flex-col animate-in fade-in zoom-in-95 duration-100 ${paymentDropdown.positionClass}`}
+                                                        >
+                                                            {PAYMENT_OPTIONS.map(option => (
+                                                                <div
+                                                                    key={option}
+                                                                    className={`px-4 py-3 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0 ${paymentTerms === option ? 'bg-primary/5 text-primary font-bold' : 'text-slate-600'}`}
+                                                                    onClick={() => {
+                                                                        setPaymentTerms(option);
+                                                                        setShowPaymentDropdown(false);
+                                                                    }}
+                                                                >
+                                                                    {option}
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Manual Days Input */}
+                                        {paymentTerms === 'Manual entry for days' && (
+                                            <div className="animate-in fade-in slide-in-from-top-1">
+                                                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Number of Days <span className="text-red-500">*</span></label>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    value={manualPaymentDays}
+                                                    onChange={(e) => setManualPaymentDays(e.target.value)}
+                                                    className="block w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none text-sm font-medium"
+                                                    placeholder="Enter number of days"
+                                                />
+                                            </div>
                                         )}
                                     </div>
                                 </div>
                             </div>
 
-
-                            {/* Payment & Logistics */}
-                            <div className="bg-white rounded-2xl shadow-sm border border-slate-200/60 h-full">
+                            {/* Notes */}
+                            <div className="bg-white rounded-2xl shadow-sm border border-slate-200/60 overflow-hidden">
                                 <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center gap-3">
                                     <div className="bg-white p-1.5 rounded-lg border border-slate-200 shadow-sm text-primary">
-                                        <CreditCard size={18} />
+                                        <FileText size={18} />
                                     </div>
-                                    <h2 className="text-lg font-bold text-slate-800">Payment & Logistics</h2>
+                                    <h2 className="text-lg font-bold text-slate-800">Additional Notes</h2>
                                 </div>
+                                <div className="p-6">
+                                    <textarea
+                                        rows="3"
+                                        value={notes}
+                                        onChange={(e) => setNotes(e.target.value)}
+                                        className="block w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none text-sm font-medium resize-none placeholder:text-slate-400"
+                                        placeholder="Add delivery instructions or any special notes..."
+                                    ></textarea>
+                                </div>
+                            </div>
 
-                                <div className="p-6 space-y-5">
-                                    {/* Logistics */}
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Logistics Mode</label>
-                                        <div className="relative">
-                                            <div
-                                                onClick={() => setShowLogisticsDropdown(!showLogisticsDropdown)}
-                                                className="block w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer hover:bg-white focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary transition-all text-sm font-medium flex items-center justify-between relative"
-                                            >
-                                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                                    <Truck size={18} className="text-slate-400" />
-                                                </div>
-                                                <span className={logistics ? "text-slate-800" : "text-slate-400"}>
-                                                    {logistics || "Select Logistics Option"}
-                                                </span>
-                                                <ChevronDown size={16} className={`text-slate-400 transition-transform ${showLogisticsDropdown ? 'rotate-180' : ''}`} />
-                                            </div>
-
-                                            {showLogisticsDropdown && (
-                                                <>
-                                                    <div
-                                                        className="fixed inset-0 z-10"
-                                                        onClick={() => setShowLogisticsDropdown(false)}
-                                                    ></div>
-                                                    <div
-                                                        ref={logisticsDropdown.ref}
-                                                        className={`absolute z-20 w-full bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-y-auto custom-scrollbar flex flex-col animate-in fade-in zoom-in-95 duration-100 ${logisticsDropdown.positionClass}`}
-                                                    >
-                                                        {['Paid by Customer', 'Paid by Company'].map(opt => (
-                                                            <div
-                                                                key={opt}
-                                                                className={`px-4 py-3 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0 ${logistics === opt ? 'bg-primary/5 text-primary font-bold' : 'text-slate-600'}`}
-                                                                onClick={() => {
-                                                                    setLogistics(opt);
-                                                                    setShowLogisticsDropdown(false);
-                                                                }}
-                                                            >
-                                                                {opt}
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {/* Payment Terms */}
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Payment Terms</label>
-                                        <div className="relative">
-                                            <div
-                                                onClick={() => setShowPaymentDropdown(!showPaymentDropdown)}
-                                                className="block w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer hover:bg-white focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary transition-all text-sm font-medium flex items-center justify-between relative"
-                                            >
-                                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                                    <CreditCard size={18} className="text-slate-400" />
-                                                </div>
-                                                <span className={paymentTerms ? "text-slate-800" : "text-slate-400"}>
-                                                    {paymentTerms || "Select Payment Terms"}
-                                                </span>
-                                                <ChevronDown size={16} className={`text-slate-400 transition-transform ${showPaymentDropdown ? 'rotate-180' : ''}`} />
-                                            </div>
-
-                                            {showPaymentDropdown && (
-                                                <>
-                                                    <div
-                                                        className="fixed inset-0 z-10"
-                                                        onClick={() => setShowPaymentDropdown(false)}
-                                                    ></div>
-                                                    <div
-                                                        ref={paymentDropdown.ref}
-                                                        className={`absolute z-20 w-full bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-y-auto custom-scrollbar flex flex-col animate-in fade-in zoom-in-95 duration-100 ${paymentDropdown.positionClass}`}
-                                                    >
-                                                        {PAYMENT_OPTIONS.map(option => (
-                                                            <div
-                                                                key={option}
-                                                                className={`px-4 py-3 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0 ${paymentTerms === option ? 'bg-primary/5 text-primary font-bold' : 'text-slate-600'}`}
-                                                                onClick={() => {
-                                                                    setPaymentTerms(option);
-                                                                    setShowPaymentDropdown(false);
-                                                                }}
-                                                            >
-                                                                {option}
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {/* Manual Days Input */}
-                                    {paymentTerms === 'Manual entry for days' && (
-                                        <div className="animate-in fade-in slide-in-from-top-1">
-                                            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Number of Days</label>
-                                            <input
-                                                type="number"
-                                                min="0"
-                                                value={manualPaymentDays}
-                                                onChange={(e) => setManualPaymentDays(e.target.value)}
-                                                className="block w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none text-sm font-medium"
-                                                placeholder="Enter number of days"
-                                            />
-                                        </div>
+                            {/* Actions */}
+                            <div className="flex items-center justify-end gap-3 pt-2">
+                                <button
+                                    type="button"
+                                    className="px-6 py-2.5 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors shadow-sm"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={loading}
+                                    className="px-6 py-2.5 text-sm font-medium text-white bg-primary rounded-lg hover:bg-primary/90 transition-colors shadow-sm flex items-center gap-2"
+                                >
+                                    {loading ? (
+                                        <>
+                                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                                            Processing...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Save size={18} />
+                                            Submit Order
+                                        </>
                                     )}
-                                </div>
+                                </button>
                             </div>
-                        </div>
 
-                        {/* Notes */}
-                        <div className="bg-white rounded-2xl shadow-sm border border-slate-200/60 overflow-hidden">
-                            <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center gap-3">
-                                <div className="bg-white p-1.5 rounded-lg border border-slate-200 shadow-sm text-primary">
-                                    <FileText size={18} />
-                                </div>
-                                <h2 className="text-lg font-bold text-slate-800">Additional Notes</h2>
-                            </div>
-                            <div className="p-6">
-                                <textarea
-                                    rows="3"
-                                    value={notes}
-                                    onChange={(e) => setNotes(e.target.value)}
-                                    className="block w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none text-sm font-medium resize-none placeholder:text-slate-400"
-                                    placeholder="Add delivery instructions or any special notes..."
-                                ></textarea>
-                            </div>
-                        </div>
-
-                        {/* Actions */}
-                        <div className="flex items-center justify-end gap-3 pt-2">
-                            <button
-                                type="button"
-                                className="px-6 py-2.5 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors shadow-sm"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                type="submit"
-                                disabled={loading}
-                                className="px-6 py-2.5 text-sm font-medium text-white bg-primary rounded-lg hover:bg-primary/90 transition-colors shadow-sm flex items-center gap-2"
-                            >
-                                {loading ? (
-                                    <>
-                                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                                        Processing...
-                                    </>
-                                ) : (
-                                    <>
-                                        <Save size={18} />
-                                        Submit Order
-                                    </>
-                                )}
-                            </button>
-                        </div>
-
-                    </form>
+                        </form>
+                    </div>
                 ) : (
-                    <div className="max-w-6xl mx-auto pb-10 space-y-4">
+                    <div className="h-full flex flex-col w-full max-w-6xl mx-auto p-6 gap-6">
                         {/* Filters */}
                         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex items-center gap-4">
                             <div className="flex items-center gap-2 text-slate-500 text-sm font-medium">
@@ -1584,7 +1733,7 @@ const NewOrder = () => {
                                 <span className="uppercase text-xs font-bold tracking-wider">Filters:</span>
                             </div>
 
-                            <div className="relative w-64">
+                            <div className="relative w-64" ref={historyStateWrapperRef}>
                                 <div
                                     onClick={() => setShowHistoryStateDropdown(!showHistoryStateDropdown)}
                                     className="block w-full px-4 py-2 border border-slate-200 rounded-lg bg-slate-50 transition-all text-sm font-medium flex items-center justify-between cursor-pointer hover:bg-white focus-within:ring-2 focus-within:ring-primary/20 focus-within:border-primary"
@@ -1611,10 +1760,6 @@ const NewOrder = () => {
                                 {/* Dropdown */}
                                 {showHistoryStateDropdown && (
                                     <>
-                                        <div
-                                            className="fixed inset-0 z-10"
-                                            onClick={() => setShowHistoryStateDropdown(false)}
-                                        ></div>
                                         <div
                                             ref={historyStateDropdown.ref}
                                             className={`absolute z-20 w-full bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-100 ${historyStateDropdown.positionClass}`}
@@ -1670,10 +1815,10 @@ const NewOrder = () => {
                             </div>
                         </div>
 
-                        <div className="bg-white rounded-2xl shadow-sm border border-slate-200/60 overflow-hidden">
-                            <div className="overflow-x-auto">
+                        <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-200/60 flex flex-col overflow-hidden">
+                            <div className="flex-1 overflow-auto custom-scrollbar relative">
                                 <table className="w-full text-left text-sm">
-                                    <thead className="bg-slate-50 border-b border-slate-200">
+                                    <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 z-10 shadow-sm">
                                         <tr>
                                             <th className="px-6 py-4 font-semibold text-slate-700 whitespace-nowrap">Order ID</th>
                                             <th className="px-6 py-4 font-semibold text-slate-700 whitespace-nowrap">Date</th>
@@ -1687,7 +1832,7 @@ const NewOrder = () => {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
-                                        {filteredOrderHistory.map((order) => (
+                                        {paginatedOrderHistory.map((order) => (
                                             <tr key={order.order_id} className="hover:bg-slate-50/50 transition-colors">
                                                 <td
                                                     onClick={() => setSelectedOrder(order)}
@@ -1750,351 +1895,431 @@ const NewOrder = () => {
                                     </tbody>
                                 </table>
                             </div>
+
+                            {/* Pagination Controls */}
+                            {filteredOrderHistory.length > 0 && (
+                                <div className="flex items-center justify-between border-t border-slate-200 bg-white px-4 py-3 sm:px-6">
+                                    <div className="flex flex-1 justify-between sm:hidden">
+                                        <button
+                                            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                            disabled={currentPage === 1}
+                                            className="relative inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            Previous
+                                        </button>
+                                        <button
+                                            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                            disabled={currentPage === totalPages}
+                                            className="relative ml-3 inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            Next
+                                        </button>
+                                    </div>
+                                    <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
+                                        <div>
+                                            <p className="text-sm text-slate-700">
+                                                Showing <span className="font-medium">{(currentPage - 1) * itemsPerPage + 1}</span> to <span className="font-medium">{Math.min(currentPage * itemsPerPage, filteredOrderHistory.length)}</span> of <span className="font-medium">{filteredOrderHistory.length}</span> results
+                                            </p>
+                                        </div>
+                                        <div>
+                                            <nav className="isolate inline-flex -space-x-px rounded-md shadow-sm" aria-label="Pagination">
+                                                <button
+                                                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                                    disabled={currentPage === 1}
+                                                    className="relative inline-flex items-center rounded-l-md px-2 py-2 text-slate-400 ring-1 ring-inset ring-slate-300 hover:bg-slate-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                >
+                                                    <span className="sr-only">Previous</span>
+                                                    <ChevronLeft className="h-5 w-5" aria-hidden="true" />
+                                                </button>
+
+                                                {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => {
+                                                    if (
+                                                        page === 1 ||
+                                                        page === totalPages ||
+                                                        (page >= currentPage - 1 && page <= currentPage + 1)
+                                                    ) {
+                                                        return (
+                                                            <button
+                                                                key={page}
+                                                                onClick={() => setCurrentPage(page)}
+                                                                className={`relative inline-flex items-center px-4 py-2 text-sm font-semibold ${currentPage === page
+                                                                    ? 'z-10 bg-primary text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary'
+                                                                    : 'text-slate-900 ring-1 ring-inset ring-slate-300 hover:bg-slate-50 focus:z-20 focus:outline-offset-0'
+                                                                    }`}
+                                                            >
+                                                                {page}
+                                                            </button>
+                                                        );
+                                                    } else if (
+                                                        (page === currentPage - 2 && page > 1) ||
+                                                        (page === currentPage + 2 && page < totalPages)
+                                                    ) {
+                                                        return <span key={page} className="relative inline-flex items-center px-4 py-2 text-sm font-semibold text-slate-700 ring-1 ring-inset ring-slate-300 focus:outline-offset-0">...</span>
+                                                    }
+                                                    return null;
+                                                })}
+
+                                                <button
+                                                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                                    disabled={currentPage === totalPages}
+                                                    className="relative inline-flex items-center rounded-r-md px-2 py-2 text-slate-400 ring-1 ring-inset ring-slate-300 hover:bg-slate-50 focus:z-20 focus:outline-offset-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                >
+                                                    <span className="sr-only">Next</span>
+                                                    <ChevronRight className="h-5 w-5" aria-hidden="true" />
+                                                </button>
+                                            </nav>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
-                )}
+                )
+                }
                 {/* Order Details Modal */}
-                {selectedOrder && (
-                    <div
-                        className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-in fade-in duration-200"
-                        onClick={(e) => {
-                            if (e.target === e.currentTarget) {
-                                setSelectedOrder(null);
-                            }
-                        }}
-                    >
-                        <div className="bg-white rounded-2xl shadow-xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col md:flex-row ring-1 ring-slate-900/5">
+                {
+                    selectedOrder && (
+                        <div
+                            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+                            onClick={(e) => {
+                                if (e.target === e.currentTarget) {
+                                    setSelectedOrder(null);
+                                }
+                            }}
+                        >
+                            <div className="bg-white rounded-2xl shadow-xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col md:flex-row ring-1 ring-slate-900/5">
 
-                            {/* Left Sidebar - Key Info */}
-                            <div className="w-full md:w-72 bg-white border-r border-slate-100 p-6 flex flex-col gap-6 shrink-0 text-left">
+                                {/* Left Sidebar - Key Info */}
+                                <div className="w-full md:w-72 bg-white border-r border-slate-100 p-6 flex flex-col gap-6 shrink-0 text-left">
 
-                                {/* Date */}
-                                <div>
-                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Order Date</span>
-                                    <div className="flex items-center gap-3">
-                                        <div className="p-2 bg-slate-50 rounded-lg text-slate-500">
-                                            <Calendar size={18} />
-                                        </div>
-                                        <div>
-                                            <p className="text-sm font-bold text-slate-800">
-                                                {new Date(selectedOrder.order_date).toLocaleDateString('en-GB')}
-                                            </p>
-                                            <p className="text-xs text-slate-500">
-                                                {selectedOrder.created_at ? new Date(selectedOrder.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : ''}
-                                            </p>
+                                    {/* Date */}
+                                    <div>
+                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Order Date</span>
+                                        <div className="flex items-center gap-3">
+                                            <div className="p-2 bg-slate-50 rounded-lg text-slate-500">
+                                                <Calendar size={18} />
+                                            </div>
+                                            <div>
+                                                <p className="text-sm font-bold text-slate-800">
+                                                    {new Date(selectedOrder.order_date).toLocaleDateString('en-GB')}
+                                                </p>
+                                                <p className="text-xs text-slate-500">
+                                                    {selectedOrder.created_at ? new Date(selectedOrder.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }) : ''}
+                                                </p>
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
 
-                                <div className="h-px bg-slate-50 w-full"></div>
+                                    <div className="h-px bg-slate-50 w-full"></div>
 
-                                {/* Status */}
-                                <div>
-                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Status</span>
-                                    <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold border ${['Approved', 'Completed'].includes(selectedOrder.order_status)
-                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
-                                        : selectedOrder.order_status === 'Rejected'
-                                            ? 'bg-red-50 text-red-700 border-red-100'
-                                            : selectedOrder.order_status === 'Processing'
-                                                ? 'bg-blue-50 text-blue-700 border-blue-100'
-                                                : 'bg-amber-50 text-amber-700 border-amber-100'
-                                        }`}>
-                                        <span className={`w-1.5 h-1.5 rounded-full mr-2 ${['Approved', 'Completed'].includes(selectedOrder.order_status)
-                                            ? 'bg-emerald-500'
+                                    {/* Status */}
+                                    <div>
+                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Status</span>
+                                        <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold border ${['Approved', 'Completed'].includes(selectedOrder.order_status)
+                                            ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
                                             : selectedOrder.order_status === 'Rejected'
-                                                ? 'bg-red-500'
+                                                ? 'bg-red-50 text-red-700 border-red-100'
                                                 : selectedOrder.order_status === 'Processing'
-                                                    ? 'bg-blue-500'
-                                                    : 'bg-amber-500'
-                                            }`}></span>
-                                        {selectedOrder.order_status || 'Pending'}
-                                    </span>
-                                </div>
-
-                                <div className="h-px bg-slate-50 w-full"></div>
-
-                                {/* Payment Info */}
-                                <div>
-                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Payment Terms</span>
-                                    <div className="text-sm font-medium text-slate-700">
-                                        {selectedOrder.payment_terms || 'Standard'}
-                                    </div>
-                                    {selectedOrder.manual_payment_days && (
-                                        <div className="text-xs text-slate-500 mt-1">
-                                            {selectedOrder.manual_payment_days} days credit
-                                        </div>
-                                    )}
-                                </div>
-
-                                <div className="h-px bg-slate-50 w-full"></div>
-
-                                {/* Total Amount */}
-                                <div>
-                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Total Value</span>
-                                    <p className="text-2xl font-bold text-slate-800 tracking-tight">₹ {selectedOrder.total_amount?.toLocaleString()}</p>
-                                    <p className="text-[10px] text-slate-400 mt-0.5">Inclusive of taxes</p>
-                                </div>
-
-                                <div className="mt-auto">
-                                    <button
-                                        onClick={() => setSelectedOrder(null)}
-                                        className="w-full py-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 font-semibold rounded-lg transition-colors text-sm"
-                                    >
-                                        Close
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* Right Content - Full Details */}
-                            <div className="flex-1 overflow-y-auto custom-scrollbar bg-slate-50/30 relative">
-                                {/* Header Strip */}
-                                <div className="sticky top-0 z-10 bg-white/90 backdrop-blur-md border-b border-slate-200/60 px-8 py-4 flex items-center justify-between">
-                                    <div className="flex items-center gap-3">
-                                        <div className="bg-primary/10 p-2 rounded-lg text-primary">
-                                            <FileText size={18} />
-                                        </div>
-                                        <div>
-                                            <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Order ID</p>
-                                            <p className="text-base font-bold text-slate-800 tracking-tight">{selectedOrder.order_id}</p>
-                                        </div>
-                                    </div>
-                                    <div className="flex gap-6 text-right">
-                                        <div className="hidden sm:block">
-                                            <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Contractor ID</p>
-                                            <p className="text-sm font-semibold text-slate-700">{selectedOrder.contractor_id || '-'}</p>
-                                        </div>
-                                        <div className="hidden sm:block">
-                                            <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Site ID</p>
-                                            <p className="text-sm font-semibold text-slate-700">{selectedOrder.site_id || '-'}</p>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="p-8 space-y-8">
-                                    {/* Info Grid */}
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                        {/* Contractor Card */}
-                                        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
-                                            <div className="flex items-center gap-2 mb-4 text-slate-800">
-                                                <User size={16} className="text-primary" />
-                                                <h4 className="font-bold text-xs uppercase tracking-wider">Contractor Details</h4>
-                                            </div>
-                                            <div className="space-y-1">
-                                                <p className="text-base font-bold text-slate-800">{selectedOrder.contractor_name}</p>
-
-                                                {selectedOrder.customer_type === 'Mistry' ? (
-                                                    <div className="flex flex-col gap-1 mt-1">
-                                                        <div className="text-xs text-slate-500 font-medium">
-                                                            Contractor Type - <span className="font-bold text-slate-700">({selectedOrder.customer_type})</span>
-                                                        </div>
-                                                        {selectedOrder.contractor_id && (
-                                                            <div className="text-xs text-slate-500 font-medium">
-                                                                Associated Contractor - <span className="font-bold text-slate-700">({selectedOrder.contractor_id.split('/')[3]?.split('-')[0] || 'Unknown'})</span>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                ) : (
-                                                    <div className="flex flex-wrap gap-2 text-xs text-slate-500 font-medium">
-                                                        <span className="px-2 py-0.5 bg-slate-100 rounded text-slate-600">{selectedOrder.customer_type}</span>
-                                                    </div>
-                                                )}
-
-                                                <div className="flex items-center gap-1.5 text-sm text-slate-600 mt-2">
-                                                    <Phone size={14} className="text-slate-400" />
-                                                    {selectedOrder.customer_phone || selectedOrder.site_contact_number || 'No contact'}
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {/* Delivery Card */}
-                                        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
-                                            <div className="flex items-center gap-2 mb-4 text-slate-800">
-                                                <Truck size={16} className="text-primary" />
-                                                <h4 className="font-bold text-xs uppercase tracking-wider">Delivery Details</h4>
-                                            </div>
-                                            <div className="space-y-3">
-                                                <div className="space-y-1">
-                                                    <p className="text-sm font-medium text-slate-800 leading-relaxed">
-                                                        {selectedOrder.delivery_address || 'No Address Provided'}
-                                                    </p>
-                                                    {(selectedOrder.city || selectedOrder.state) && (
-                                                        <p className="text-xs text-slate-500 font-medium">
-                                                            {selectedOrder.city ? `${selectedOrder.city}, ` : ''}{selectedOrder.state || ''}
-                                                        </p>
-                                                    )}
-                                                </div>
-                                                <div className="flex gap-4 pt-2 border-t border-slate-50">
-                                                    <div>
-                                                        <span className="text-[10px] text-slate-400 uppercase font-bold block">Logistics</span>
-                                                        <span className="text-xs font-semibold text-slate-700">{selectedOrder.logistics_mode || 'N/A'}</span>
-                                                    </div>
-                                                    {selectedOrder.challan_reference && (
-                                                        <div>
-                                                            <span className="text-[10px] text-slate-400 uppercase font-bold block">Challan</span>
-                                                            <span className="text-xs font-semibold text-slate-700">{selectedOrder.challan_reference}</span>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
+                                                    ? 'bg-blue-50 text-blue-700 border-blue-100'
+                                                    : 'bg-amber-50 text-amber-700 border-amber-100'
+                                            }`}>
+                                            <span className={`w-1.5 h-1.5 rounded-full mr-2 ${['Approved', 'Completed'].includes(selectedOrder.order_status)
+                                                ? 'bg-emerald-500'
+                                                : selectedOrder.order_status === 'Rejected'
+                                                    ? 'bg-red-500'
+                                                    : selectedOrder.order_status === 'Processing'
+                                                        ? 'bg-blue-500'
+                                                        : 'bg-amber-500'
+                                                }`}></span>
+                                            {selectedOrder.order_status || 'Pending'}
+                                        </span>
                                     </div>
 
+                                    <div className="h-px bg-slate-50 w-full"></div>
 
-
-                                    {/* Items Table */}
-                                    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
-                                        <div className="px-5 py-3 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
-                                            <div className="flex items-center gap-2">
-                                                <ShoppingBag size={16} className="text-primary" />
-                                                <h4 className="font-bold text-xs uppercase tracking-wider text-slate-800">Order Items</h4>
-                                            </div>
-                                            <span className="text-xs font-semibold text-slate-500">
-                                                {selectedOrder.items?.length || 0} Item{selectedOrder.items?.length !== 1 ? 's' : ''}
-                                            </span>
+                                    {/* Payment Info */}
+                                    <div>
+                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">Payment Terms</span>
+                                        <div className="text-sm font-medium text-slate-700">
+                                            {selectedOrder.payment_terms || 'Standard'}
                                         </div>
-                                        <table className="w-full text-sm text-left">
-                                            <thead className="bg-white text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100">
-                                                <tr>
-                                                    <th className="px-5 py-3">Product</th>
-                                                    <th className="px-5 py-3 text-right">Qty</th>
-                                                    <th className="px-5 py-3 text-right">Price</th>
-                                                    <th className="px-5 py-3 text-right">Points</th>
-                                                    <th className="px-5 py-3 text-right">Amount</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-slate-50">
-                                                {selectedOrder.items && selectedOrder.items.length > 0 ? (
-                                                    selectedOrder.items.map((item, idx) => (
-                                                        <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
-                                                            <td className="px-5 py-3 font-medium text-slate-700">{item.product_name}</td>
-                                                            <td className="px-5 py-3 text-slate-600 text-right tabular-nums">{item.quantity}</td>
-                                                            <td className="px-5 py-3 text-slate-600 text-right tabular-nums">₹{item.unit_price}</td>
-                                                            <td className="px-5 py-3 text-blue-600 text-right tabular-nums font-medium">+{item.reward_points}</td>
-                                                            <td className="px-5 py-3 text-slate-800 text-right font-bold tabular-nums">₹{(item.quantity * item.unit_price).toLocaleString()}</td>
-                                                        </tr>
-                                                    ))
-                                                ) : (
-                                                    <tr>
-                                                        <td colSpan="5" className="px-5 py-8 text-center text-slate-400 text-xs italic">No items found</td>
-                                                    </tr>
-                                                )}
-                                            </tbody>
-                                            <tfoot className="bg-slate-50/50 border-t border-slate-200/60">
-                                                <tr>
-                                                    <td className="px-5 py-3 font-semibold text-slate-600 text-xs">Total</td>
-                                                    <td className="px-5 py-3 font-bold text-slate-700 text-right tabular-nums">
-                                                        {selectedOrder.items?.reduce((s, i) => s + (i.quantity || 0), 0)}
-                                                    </td>
-                                                    <td colSpan="2"></td>
-                                                    <td className="px-5 py-3 font-bold text-slate-800 text-right tabular-nums">
-                                                        ₹{selectedOrder.total_amount?.toLocaleString()}
-                                                    </td>
-                                                </tr>
-                                            </tfoot>
-                                        </table>
-                                    </div>
-
-                                    {/* Points Allocation Table */}
-                                    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
-                                        <div className="px-5 py-3 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
-                                            <div className="flex items-center gap-2">
-                                                <Award size={16} className="text-primary" />
-                                                <h4 className="font-bold text-xs uppercase tracking-wider text-slate-800">Points Allocation</h4>
-                                            </div>
-                                            <span className="text-xs font-semibold text-slate-500">
-                                                {selectedOrder.allocations?.length || 0} Beneficiar{selectedOrder.allocations?.length !== 1 ? 'y' : 'ies'}
-                                            </span>
-                                        </div>
-                                        <table className="w-full text-sm text-left">
-                                            <thead className="bg-white text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100">
-                                                <tr>
-                                                    <th className="px-5 py-3">Person Name</th>
-                                                    <th className="px-5 py-3">Role</th>
-                                                    <th className="px-5 py-3 text-right">Phone (Last 4)</th>
-                                                    <th className="px-5 py-3 text-right">Points</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-slate-50">
-                                                {selectedOrder.allocations && selectedOrder.allocations.length > 0 ? (
-                                                    selectedOrder.allocations.map((alloc, idx) => (
-                                                        <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
-                                                            <td className="px-5 py-3 font-medium text-slate-700">{alloc.person_name}</td>
-                                                            <td className="px-5 py-3 text-slate-600">
-                                                                <span className="px-2 py-0.5 rounded-md bg-slate-100/80 text-xs font-medium border border-slate-200/60">
-                                                                    {alloc.role}
-                                                                </span>
-                                                            </td>
-                                                            <td className="px-5 py-3 text-slate-600 text-right tabular-nums tracking-wider text-xs font-mono">
-                                                                ••• {alloc.phone_last_4}
-                                                            </td>
-                                                            <td className="px-5 py-3 text-emerald-600 text-right font-bold tabular-nums">
-                                                                +{alloc.allocated_points} P
-                                                            </td>
-                                                        </tr>
-                                                    ))
-                                                ) : (
-                                                    <tr>
-                                                        <td colSpan="4" className="px-5 py-8 text-center text-slate-400 text-xs italic">No points allocated</td>
-                                                    </tr>
-                                                )}
-                                            </tbody>
-                                            {selectedOrder.allocations && selectedOrder.allocations.length > 0 && (
-                                                <tfoot className="bg-slate-50/50 border-t border-slate-200/60">
-                                                    <tr>
-                                                        <td colSpan="3" className="px-5 py-3 font-semibold text-slate-600 text-xs text-right">Total Allocated</td>
-                                                        <td className="px-5 py-3 font-bold text-slate-800 text-right tabular-nums">
-                                                            {selectedOrder.allocations.reduce((sum, a) => sum + (a.allocated_points || 0), 0)} P
-                                                        </td>
-                                                    </tr>
-                                                </tfoot>
-                                            )}
-                                        </table>
-                                    </div>
-
-                                    {/* Footer: Points To & Notes */}
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                        {/* Points To */}
-                                        {/* Points To */}
-                                        {(selectedOrder.point_of_contact_role || (selectedOrder.allocations && selectedOrder.allocations.length > 0)) ? (
-                                            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex items-start gap-3">
-                                                <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg shrink-0">
-                                                    <Award size={16} />
-                                                </div>
-                                                <div>
-                                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Points Beneficiary</span>
-                                                    <p className="text-sm font-bold text-slate-800">
-                                                        {selectedOrder.allocations && selectedOrder.allocations.length > 0
-                                                            ? [...new Set(selectedOrder.allocations.map(a => a.role))].join(', ')
-                                                            : selectedOrder.point_of_contact_role}
-                                                    </p>
-                                                </div>
-                                            </div>
-                                        ) : <div></div>}
-
-                                        {/* Notes */}
-                                        {selectedOrder.remarks && (
-                                            <div className="bg-amber-50/50 border border-amber-100 rounded-xl p-4 flex items-start gap-3">
-                                                <div className="p-2 bg-amber-100 text-amber-600 rounded-lg shrink-0">
-                                                    <FileText size={16} />
-                                                </div>
-                                                <div>
-                                                    <span className="text-[10px] font-bold text-amber-700/60 uppercase tracking-widest block mb-0.5">Notes</span>
-                                                    <p className="text-sm text-slate-700 leading-relaxed">{selectedOrder.remarks}</p>
-                                                </div>
+                                        {selectedOrder.manual_payment_days && (
+                                            <div className="text-xs text-slate-500 mt-1">
+                                                {selectedOrder.manual_payment_days} days credit
                                             </div>
                                         )}
                                     </div>
-                                    {/* Payment Details */}
-                                    <PaymentDetailsCard
-                                        order={selectedOrder}
-                                        payment={Array.isArray(selectedOrder.payments) ? selectedOrder.payments[0] : (selectedOrder.payments || {})}
-                                    />
+
+                                    <div className="h-px bg-slate-50 w-full"></div>
+
+                                    {/* Total Amount */}
+                                    <div>
+                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Total Value</span>
+                                        <p className="text-2xl font-bold text-slate-800 tracking-tight">₹ {selectedOrder.total_amount?.toLocaleString()}</p>
+                                        <p className="text-[10px] text-slate-400 mt-0.5">Inclusive of taxes</p>
+                                    </div>
+
+                                    <div className="mt-auto">
+                                        <button
+                                            onClick={() => setSelectedOrder(null)}
+                                            className="w-full py-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 font-semibold rounded-lg transition-colors text-sm"
+                                        >
+                                            Close
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Right Content - Full Details */}
+                                <div className="flex-1 overflow-y-auto custom-scrollbar bg-slate-50/30 relative">
+                                    {/* Header Strip */}
+                                    <div className="sticky top-0 z-10 bg-white/90 backdrop-blur-md border-b border-slate-200/60 px-8 py-4 flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            <div className="bg-primary/10 p-2 rounded-lg text-primary">
+                                                <FileText size={18} />
+                                            </div>
+                                            <div>
+                                                <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Order ID</p>
+                                                <p className="text-base font-bold text-slate-800 tracking-tight">{selectedOrder.order_id}</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex gap-6 text-right">
+                                            <div className="hidden sm:block">
+                                                <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Contractor ID</p>
+                                                <p className="text-sm font-semibold text-slate-700">{selectedOrder.contractor_id || '-'}</p>
+                                            </div>
+                                            <div className="hidden sm:block">
+                                                <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Site ID</p>
+                                                <p className="text-sm font-semibold text-slate-700">{selectedOrder.site_id || '-'}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="p-8 space-y-8">
+                                        {/* Info Grid */}
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                            {/* Contractor Card */}
+                                            <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+                                                <div className="flex items-center gap-2 mb-4 text-slate-800">
+                                                    <User size={16} className="text-primary" />
+                                                    <h4 className="font-bold text-xs uppercase tracking-wider">Contractor Details</h4>
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <p className="text-base font-bold text-slate-800">{selectedOrder.contractor_name}</p>
+
+                                                    {selectedOrder.customer_type === 'Mistry' ? (
+                                                        <div className="flex flex-col gap-1 mt-1">
+                                                            <div className="text-xs text-slate-500 font-medium">
+                                                                Contractor Type - <span className="font-bold text-slate-700">({selectedOrder.customer_type})</span>
+                                                            </div>
+                                                            {selectedOrder.contractor_id && (
+                                                                <div className="text-xs text-slate-500 font-medium">
+                                                                    Associated Contractor - <span className="font-bold text-slate-700">({selectedOrder.contractor_id.split('/')[3]?.split('-')[0] || 'Unknown'})</span>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    ) : (
+                                                        <div className="flex flex-wrap gap-2 text-xs text-slate-500 font-medium">
+                                                            <span className="px-2 py-0.5 bg-slate-100 rounded text-slate-600">{selectedOrder.customer_type}</span>
+                                                        </div>
+                                                    )}
+
+                                                    <div className="flex items-center gap-1.5 text-sm text-slate-600 mt-2">
+                                                        <Phone size={14} className="text-slate-400" />
+                                                        {selectedOrder.customer_phone || selectedOrder.site_contact_number || 'No contact'}
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Delivery Card */}
+                                            <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+                                                <div className="flex items-center gap-2 mb-4 text-slate-800">
+                                                    <Truck size={16} className="text-primary" />
+                                                    <h4 className="font-bold text-xs uppercase tracking-wider">Delivery Details</h4>
+                                                </div>
+                                                <div className="space-y-3">
+                                                    <div className="space-y-1">
+                                                        <p className="text-sm font-medium text-slate-800 leading-relaxed">
+                                                            {selectedOrder.delivery_address || 'No Address Provided'}
+                                                        </p>
+                                                        {(selectedOrder.city || selectedOrder.state) && (
+                                                            <p className="text-xs text-slate-500 font-medium">
+                                                                {selectedOrder.city ? `${selectedOrder.city}, ` : ''}{selectedOrder.state || ''}
+                                                            </p>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex gap-4 pt-2 border-t border-slate-50">
+                                                        <div>
+                                                            <span className="text-[10px] text-slate-400 uppercase font-bold block">Logistics</span>
+                                                            <span className="text-xs font-semibold text-slate-700">{selectedOrder.logistics_mode || 'N/A'}</span>
+                                                        </div>
+                                                        {selectedOrder.challan_reference && (
+                                                            <div>
+                                                                <span className="text-[10px] text-slate-400 uppercase font-bold block">Challan</span>
+                                                                <span className="text-xs font-semibold text-slate-700">{selectedOrder.challan_reference}</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+
+
+                                        {/* Items Table */}
+                                        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                                            <div className="px-5 py-3 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+                                                <div className="flex items-center gap-2">
+                                                    <ShoppingBag size={16} className="text-primary" />
+                                                    <h4 className="font-bold text-xs uppercase tracking-wider text-slate-800">Order Items</h4>
+                                                </div>
+                                                <span className="text-xs font-semibold text-slate-500">
+                                                    {selectedOrder.items?.length || 0} Item{selectedOrder.items?.length !== 1 ? 's' : ''}
+                                                </span>
+                                            </div>
+                                            <table className="w-full text-sm text-left">
+                                                <thead className="bg-white text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100">
+                                                    <tr>
+                                                        <th className="px-5 py-3">Product</th>
+                                                        <th className="px-5 py-3 text-right">Qty</th>
+                                                        <th className="px-5 py-3 text-right">Price</th>
+                                                        <th className="px-5 py-3 text-right">Points</th>
+                                                        <th className="px-5 py-3 text-right">Amount</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-50">
+                                                    {selectedOrder.items && selectedOrder.items.length > 0 ? (
+                                                        selectedOrder.items.map((item, idx) => (
+                                                            <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
+                                                                <td className="px-5 py-3 font-medium text-slate-700">{item.product_name}</td>
+                                                                <td className="px-5 py-3 text-slate-600 text-right tabular-nums">{item.quantity}</td>
+                                                                <td className="px-5 py-3 text-slate-600 text-right tabular-nums">₹{item.unit_price}</td>
+                                                                <td className="px-5 py-3 text-blue-600 text-right tabular-nums font-medium">+{item.reward_points}</td>
+                                                                <td className="px-5 py-3 text-slate-800 text-right font-bold tabular-nums">₹{(item.quantity * item.unit_price).toLocaleString()}</td>
+                                                            </tr>
+                                                        ))
+                                                    ) : (
+                                                        <tr>
+                                                            <td colSpan="5" className="px-5 py-8 text-center text-slate-400 text-xs italic">No items found</td>
+                                                        </tr>
+                                                    )}
+                                                </tbody>
+                                                <tfoot className="bg-slate-50/50 border-t border-slate-200/60">
+                                                    <tr>
+                                                        <td className="px-5 py-3 font-semibold text-slate-600 text-xs">Total</td>
+                                                        <td className="px-5 py-3 font-bold text-slate-700 text-right tabular-nums">
+                                                            {selectedOrder.items?.reduce((s, i) => s + (i.quantity || 0), 0)}
+                                                        </td>
+                                                        <td colSpan="2"></td>
+                                                        <td className="px-5 py-3 font-bold text-slate-800 text-right tabular-nums">
+                                                            ₹{selectedOrder.total_amount?.toLocaleString()}
+                                                        </td>
+                                                    </tr>
+                                                </tfoot>
+                                            </table>
+                                        </div>
+
+                                        {/* Points Allocation Table */}
+                                        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                                            <div className="px-5 py-3 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+                                                <div className="flex items-center gap-2">
+                                                    <Award size={16} className="text-primary" />
+                                                    <h4 className="font-bold text-xs uppercase tracking-wider text-slate-800">Points Allocation</h4>
+                                                </div>
+                                                <span className="text-xs font-semibold text-slate-500">
+                                                    {selectedOrder.allocations?.length || 0} Beneficiar{selectedOrder.allocations?.length !== 1 ? 'y' : 'ies'}
+                                                </span>
+                                            </div>
+                                            <table className="w-full text-sm text-left">
+                                                <thead className="bg-white text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100">
+                                                    <tr>
+                                                        <th className="px-5 py-3">Person Name</th>
+                                                        <th className="px-5 py-3">Role</th>
+                                                        <th className="px-5 py-3 text-right">Phone (Last 4)</th>
+                                                        <th className="px-5 py-3 text-right">Points</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-50">
+                                                    {selectedOrder.allocations && selectedOrder.allocations.length > 0 ? (
+                                                        selectedOrder.allocations.map((alloc, idx) => (
+                                                            <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
+                                                                <td className="px-5 py-3 font-medium text-slate-700">{alloc.person_name}</td>
+                                                                <td className="px-5 py-3 text-slate-600">
+                                                                    <span className="px-2 py-0.5 rounded-md bg-slate-100/80 text-xs font-medium border border-slate-200/60">
+                                                                        {alloc.role}
+                                                                    </span>
+                                                                </td>
+                                                                <td className="px-5 py-3 text-slate-600 text-right tabular-nums tracking-wider text-xs font-mono">
+                                                                    ••• {alloc.phone_last_4}
+                                                                </td>
+                                                                <td className="px-5 py-3 text-emerald-600 text-right font-bold tabular-nums">
+                                                                    +{alloc.allocated_points} P
+                                                                </td>
+                                                            </tr>
+                                                        ))
+                                                    ) : (
+                                                        <tr>
+                                                            <td colSpan="4" className="px-5 py-8 text-center text-slate-400 text-xs italic">No points allocated</td>
+                                                        </tr>
+                                                    )}
+                                                </tbody>
+                                                {selectedOrder.allocations && selectedOrder.allocations.length > 0 && (
+                                                    <tfoot className="bg-slate-50/50 border-t border-slate-200/60">
+                                                        <tr>
+                                                            <td colSpan="3" className="px-5 py-3 font-semibold text-slate-600 text-xs text-right">Total Allocated</td>
+                                                            <td className="px-5 py-3 font-bold text-slate-800 text-right tabular-nums">
+                                                                {selectedOrder.allocations.reduce((sum, a) => sum + (a.allocated_points || 0), 0)} P
+                                                            </td>
+                                                        </tr>
+                                                    </tfoot>
+                                                )}
+                                            </table>
+                                        </div>
+
+                                        {/* Footer: Points To & Notes */}
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                            {/* Points To */}
+                                            {/* Points To */}
+                                            {(selectedOrder.allocations && selectedOrder.allocations.length > 0) ? (
+                                                <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex items-start gap-3">
+                                                    <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg shrink-0">
+                                                        <Award size={16} />
+                                                    </div>
+                                                    <div>
+                                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-0.5">Points Beneficiary</span>
+                                                        <p className="text-sm font-bold text-slate-800">
+                                                            {selectedOrder.allocations && selectedOrder.allocations.length > 0
+                                                                ? [...new Set(selectedOrder.allocations.map(a => a.role))].join(', ')
+                                                                : ''}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            ) : <div></div>}
+
+                                            {/* Notes */}
+                                            {selectedOrder.remarks && (
+                                                <div className="bg-amber-50/50 border border-amber-100 rounded-xl p-4 flex items-start gap-3">
+                                                    <div className="p-2 bg-amber-100 text-amber-600 rounded-lg shrink-0">
+                                                        <FileText size={16} />
+                                                    </div>
+                                                    <div>
+                                                        <span className="text-[10px] font-bold text-amber-700/60 uppercase tracking-widest block mb-0.5">Notes</span>
+                                                        <p className="text-sm text-slate-700 leading-relaxed">{selectedOrder.remarks}</p>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                        {/* Payment Details */}
+                                        <PaymentDetailsCard
+                                            order={selectedOrder}
+                                            payment={Array.isArray(selectedOrder.payments) ? selectedOrder.payments[0] : (selectedOrder.payments || {})}
+                                        />
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
-                )}
-            </div>
+                    )
+                }
+            </div >
         </div >
     );
 };

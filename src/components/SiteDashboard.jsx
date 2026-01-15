@@ -7,16 +7,14 @@ import {
     Users,
     Wallet,
     TrendingUp,
-    Package,
+
     AlertCircle,
     CheckCircle2,
     ChevronDown,
     UserCircle,
     BadgeIndianRupee
 } from 'lucide-react';
-import {
-    PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer
-} from 'recharts';
+
 import {
     Chart as ChartJS,
     CategoryScale,
@@ -42,7 +40,7 @@ ChartJS.register(
 );
 import { format, parseISO, isValid } from 'date-fns';
 
-const COLORS = ['#6366f1', '#ec4899', '#10b981', '#f59e0b', '#8b5cf6', '#3b82f6', '#06b6d4'];
+
 
 const formatDateKey = (dateString, fmt) => {
     if (!dateString) return null;
@@ -152,7 +150,6 @@ const SiteDashboard = () => {
         let partialPaymentsAmount = 0;
 
         const salesByDateMap = {};
-        const productMap = {};
 
         scopeOrders.forEach(order => {
             if (!order) return;
@@ -185,13 +182,7 @@ const SiteDashboard = () => {
                 salesByDateMap[dateKey] = (salesByDateMap[dateKey] || 0) + amount;
             }
 
-            if (Array.isArray(order.products)) {
-                order.products.forEach(p => {
-                    const name = p?.product_name || 'Unknown';
-                    const qty = parseInt(p?.quantity) || 1;
-                    productMap[name] = (productMap[name] || 0) + qty;
-                });
-            }
+
         });
 
         // Chart Data Processing (Monthly for Chart.js)
@@ -278,10 +269,7 @@ const SiteDashboard = () => {
             ]
         };
 
-        const productData = Object.entries(productMap)
-            .map(([name, value]) => ({ name, value }))
-            .sort((a, b) => b.value - a.value)
-            .slice(0, 5); // Top 5
+
 
         const validOrder = scopeOrders[0] || {};
         const contractorDetails = {
@@ -301,7 +289,6 @@ const SiteDashboard = () => {
             totalDue,
             partialPaymentsAmount,
             lineChartData,
-            productData,
             orderCount: scopeOrders.length,
             contractorDetails,
             rmInfo, // RM = User who has created the order
@@ -394,10 +381,10 @@ const SiteDashboard = () => {
                 </div>
 
                 {/* Charts Area */}
-                <div className="flex flex-col gap-6">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
                     {/* Sales History Line Graph */}
-                    <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm h-[420px] flex flex-col">
+                    <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm h-[420px] flex flex-col">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
                             <h3 className="font-bold text-slate-800 flex items-center gap-2">
                                 <TrendingUp size={18} className="text-slate-400" />
@@ -485,87 +472,7 @@ const SiteDashboard = () => {
                         )}
                     </div>
 
-                    {/* Product Distribution */}
-                    <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm h-[420px] flex flex-col">
-                        <div className="flex items-center justify-between mb-4">
-                            <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                                <Package size={18} className="text-slate-400" />
-                                Product Distribution
-                            </h3>
-                            <span className="text-xs font-medium text-slate-400 bg-slate-100 px-2 py-1 rounded-full">Top 5</span>
-                        </div>
-                        <div className="flex-1 w-full min-h-0 flex flex-col sm:flex-row items-center gap-4">
-                            {/* Chart Area */}
-                            <div className="flex-1 w-full h-[200px] sm:h-full relative">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    {dashboardData.productData.length > 0 ? (
-                                        <PieChart>
-                                            <Pie
-                                                data={dashboardData.productData}
-                                                cx="50%"
-                                                cy="50%"
-                                                innerRadius={60}
-                                                outerRadius={90}
-                                                paddingAngle={4}
-                                                dataKey="value"
-                                                stroke="none"
-                                            >
-                                                {dashboardData.productData.map((entry, index) => (
-                                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                                ))}
-                                            </Pie>
-                                            <RechartsTooltip
-                                                contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)' }}
-                                                formatter={(value) => [value, "Quantity"]}
-                                            />
-                                        </PieChart>
-                                    ) : (
-                                        <div className="flex items-center justify-center h-full text-slate-400 text-sm italic">
-                                            No product data
-                                        </div>
-                                    )}
-                                </ResponsiveContainer>
-                                {/* Center Text Effect */}
-                                {dashboardData.productData.length > 0 && (
-                                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                        <div className="text-center">
-                                            <span className="text-sm text-slate-400 font-medium">Top Product</span>
-                                            <p className="text-slate-800 font-bold text-lg max-w-[80px] truncate mx-auto">
-                                                {dashboardData.productData[0]?.name.split(' ')[0]}
-                                            </p>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
 
-                            {/* Custom Legend */}
-                            <div className="w-full sm:w-48 h-full overflow-y-auto pr-2 custom-scrollbar">
-                                <div className="space-y-3">
-                                    {dashboardData.productData.map((entry, index) => (
-                                        <div key={index} className="flex items-start gap-2">
-                                            <span
-                                                className="w-3 h-3 rounded-full mt-1.5 flex-shrink-0"
-                                                style={{ backgroundColor: COLORS[index % COLORS.length] }}
-                                            />
-                                            <div className="flex-1 min-w-0">
-                                                <p className="text-sm font-medium text-slate-700 truncate" title={entry.name}>
-                                                    {entry.name}
-                                                </p>
-                                                <p className="text-xs text-slate-400">
-                                                    {entry.value} units
-                                                </p>
-                                            </div>
-                                        </div>
-                                    ))}
-                                    {dashboardData.productData.length === 0 && (
-                                        <p className="text-xs text-slate-400 text-center py-4">
-                                            No data to display
-                                        </p>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
                 </div>
             </div>
         </div>

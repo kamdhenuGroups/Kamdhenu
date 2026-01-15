@@ -31,7 +31,7 @@ CREATE TABLE public.orders (
   city text,
   delivery_address text,
   total_amount numeric DEFAULT 0.00,
-  point_of_contact_role text,
+
   logistics_mode text,
   payment_terms text,
   manual_payment_days integer,
@@ -107,3 +107,139 @@ CREATE TABLE public.users (
   page_access ARRAY DEFAULT '{}'::text[],
   CONSTRAINT users_pkey PRIMARY KEY (user_id)
 );
+
+create table public.contractor_data (
+  contractor_id text not null,
+  contractor_name text null,
+  customer_phone numeric null,
+  nickname text null,
+  customer_type text not null,
+  state text null,
+  city text null,
+  constraint contractor_data_pkey primary key (contractor_id),
+  constraint contractor_data_contractor_id_key unique (contractor_id),
+  constraint contractor_data_nickname_key unique (nickname)
+) TABLESPACE pg_default;
+
+create table public.customers (
+  customer_id text not null,
+  customer_name text not null,
+  primary_phone text not null,
+  secondary_phone text null,
+  email text null,
+  gst_number text null,
+  is_gst_registered boolean default false,
+  pan_number text null,
+  billing_address_line text not null,
+  billing_area text null,
+  billing_locality text null,
+  billing_city text not null,
+  billing_state text not null,
+
+  created_by_user_id text not null,
+  customer_status text not null default 'Active'::text,
+  created_at timestamp with time zone not null default timezone ('Asia/Kolkata'::text, now()),
+  updated_at timestamp with time zone not null default timezone ('Asia/Kolkata'::text, now()),
+  constraint customers_pkey primary key (customer_id),
+  constraint unique_email unique (email),
+  constraint unique_pan unique (pan_number),
+  constraint unique_primary_phone unique (primary_phone),
+  constraint unique_gst unique (gst_number),
+  constraint fk_customer_created_by foreign KEY (created_by_user_id) references users (user_id) on delete RESTRICT,
+  constraint customers_customer_status_check check (
+    (
+      customer_status = any (
+        array[
+          'Active'::text,
+          'Inactive'::text,
+          'Blacklisted'::text
+        ]
+      )
+    )
+  )
+) TABLESPACE pg_default;
+
+
+create table public.sites (
+  site_id text not null,
+  address_plot_house_flat_building text not null,
+  address_area_street_locality text not null,
+  address_landmark text null,
+  city text not null,
+  state text not null,
+  map_link text null,
+  onsite_contact_name text not null,
+  onsite_contact_mobile text not null,
+  main_influencer_status text null,
+  secondary_influencer_status text null,
+  created_by_user_id text not null,
+  created_at timestamp without time zone null default (now() AT TIME ZONE 'Asia/Kolkata'::text),
+  updated_at timestamp without time zone null default (now() AT TIME ZONE 'Asia/Kolkata'::text),
+  constraint sites_pkey primary key (site_id),
+  constraint sites_created_by_user_id_fkey foreign KEY (created_by_user_id) references users (user_id),
+  constraint sites_main_influencer_status_check check (
+    (
+      main_influencer_status = any (array['Old'::text, 'New'::text])
+    )
+  ),
+  constraint sites_secondary_influencer_status_check check (
+    (
+      secondary_influencer_status = any (array['Old'::text, 'New'::text])
+    )
+  )
+) TABLESPACE pg_default;
+
+create table public.cac (
+  id bigint generated always as identity not null,
+  contractor_id text not null,
+  user_id text not null,
+  amount numeric(12, 2) not null,
+  reimbursed_amount numeric(12, 2) not null default 0,
+  reimbursement_status text not null default 'Pending'::text,
+  customer_status text not null,
+  expense_category text null,
+  bill_image_url text null,
+  expense_date date not null,
+  last_reimbursed_at timestamp with time zone null,
+  reimbursed_at timestamp with time zone null,
+  remarks text null,
+  created_at timestamp with time zone not null default timezone ('Asia/Kolkata'::text, now()),
+  updated_at timestamp with time zone not null default timezone ('Asia/Kolkata'::text, now()),
+  constraint cac_pkey primary key (id),
+  constraint cac_contractor_fkey foreign KEY (contractor_id) references contractor_data (contractor_id),
+  constraint cac_user_fkey foreign KEY (user_id) references users (user_id),
+  constraint cac_customer_status_check check (
+    (
+      customer_status = any (array['Existing'::text, 'New'::text])
+    )
+  ),
+  constraint cac_amount_check check ((amount > (0)::numeric)),
+  constraint cac_reimbursed_amount_check check ((reimbursed_amount >= (0)::numeric)),
+  constraint cac_reimbursement_status_check check (
+    (
+      reimbursement_status = any (
+        array[
+          'Pending'::text,
+          'Partial'::text,
+          'Reimbursed'::text
+        ]
+      )
+    )
+  )
+) TABLESPACE pg_default;
+
+
+create table public.user_contractor_access (
+  id bigserial not null,
+  user_id text not null,
+  contractor_id text not null,
+  can_view boolean null default true,
+  can_edit boolean null default false,
+  granted_by text null,
+  granted_at timestamp with time zone null default timezone ('Asia/Kolkata'::text, now()),
+  revoked_at timestamp with time zone null,
+  constraint user_contractor_access_pkey primary key (id),
+  constraint unique_user_contractor unique (user_id, contractor_id),
+  constraint fk_contractor foreign KEY (contractor_id) references contractor_data (contractor_id) on delete CASCADE,
+  constraint fk_user foreign KEY (user_id) references users (user_id) on delete CASCADE
+) TABLESPACE pg_default;

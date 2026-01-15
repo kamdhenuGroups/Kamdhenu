@@ -11,6 +11,9 @@ import Leads from './pages/Leads';
 import Dashboard from './pages/Dashboard';
 import CRM from './pages/CRM';
 import OrderDetails from './pages/OrderDetails';
+import AddCustomers from './pages/AddCustomers';
+import CAC from './pages/CAC';
+import AddSites from './pages/AddSites';
 
 
 
@@ -37,6 +40,9 @@ function App() {
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="crm" element={<CRM />} />
             <Route path="order-details" element={<OrderDetails />} />
+            <Route path="add-customers" element={<AddCustomers />} />
+            <Route path="cac" element={<CAC />} />
+            <Route path="add-sites" element={<AddSites />} />
 
           </Route>
 

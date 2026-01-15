@@ -7,19 +7,12 @@ import {
 import { format, parseISO, isSameDay, getYear, getMonth, getHours } from 'date-fns';
 import { Package, Calendar, MapPin, TrendingUp } from 'lucide-react';
 import SiteDashboard from '../components/SiteDashboard';
+import { Chart as ChartJS, ArcElement, Tooltip as ChartTooltip, Legend as ChartLegend, CategoryScale, LinearScale, BarElement } from 'chart.js';
+import { Pie as ChartJsPie, Doughnut, Bar as ChartJsBar } from 'react-chartjs-2';
 
-const RADIAN = Math.PI / 180;
-const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, index }) => {
-    const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
-    const x = cx + radius * Math.cos(-midAngle * RADIAN);
-    const y = cy + radius * Math.sin(-midAngle * RADIAN);
+ChartJS.register(ArcElement, ChartTooltip, ChartLegend, CategoryScale, LinearScale, BarElement);
 
-    return percent > 0.05 ? (
-        <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central" fontSize={12} fontWeight="bold">
-            {`${(percent * 100).toFixed(0)}%`}
-        </text>
-    ) : null;
-};
+
 
 const Dashboard = () => {
     const [loading, setLoading] = useState(true);
@@ -167,40 +160,37 @@ const Dashboard = () => {
     }, [allOrders, dealValueYear]);
 
     // --- 6. Monthly Payment Collection (Grouped Bar Chart) - Filter: Year ---
+    // --- 6. Monthly Payment Collection (Stacked Grouped Bar Chart) - Filter: Year ---
     const monthlyPaymentCollections = useMemo(() => {
-        const data = Array.from({ length: 12 }, (_, i) => ({
-            name: format(new Date(2000, i, 1), 'MMM'),
-            paid: 0,
-            due: 0
+        const monthsData = Array.from({ length: 12 }, (_, i) => ({
+            month: format(new Date(2000, i, 1), 'MMM'),
+            orderAmount: 0,
+            paidAmount: 0,
+            balanceAmount: 0
         }));
 
         allOrders.forEach(order => {
-            const payments = Array.isArray(order.payments) ? order.payments : (order.payments ? [order.payments] : []);
+            const orderDate = parseISO(order.order_date || order.created_at);
+            if (getYear(orderDate) === parseInt(paymentCollectionYear)) {
+                const payments = Array.isArray(order.payments) ? order.payments : (order.payments ? [order.payments] : []);
 
-            payments.forEach(payment => {
-                // Paid Amount (grouped by actual_payment_date)
-                if (payment.actual_payment_date) {
-                    const payDate = parseISO(payment.actual_payment_date);
-                    if (getYear(payDate) === parseInt(paymentCollectionYear)) {
-                        data[getMonth(payDate)].paid += (parseFloat(payment.paid_amount) || 0);
-                    }
-                }
+                // Requirement: "fetch data from the (Payments) table"
+                // We iterate payments associated with this order. 
+                // Since order_id is UNIQUE in payments, there should be at most one payment record per order.
+                payments.forEach(payment => {
+                    const oAmount = parseFloat(payment.order_amount) || 0;
+                    const pAmount = parseFloat(payment.paid_amount) || 0;
+                    const bAmount = Math.max(0, oAmount - pAmount);
 
-                // Due Amount (grouped by due_date)
-                // due_amount = order_amount - paid_amount
-                if (payment.due_date) {
-                    const dueDate = parseISO(payment.due_date);
-                    if (getYear(dueDate) === parseInt(paymentCollectionYear)) {
-                        const orderAmt = parseFloat(payment.order_amount) || parseFloat(order.total_amount) || 0;
-                        const paidAmt = parseFloat(payment.paid_amount) || 0;
-                        const dueAmt = Math.max(0, orderAmt - paidAmt);
-                        data[getMonth(dueDate)].due += dueAmt;
-                    }
-                }
-            });
+                    const monthIdx = getMonth(orderDate);
+                    monthsData[monthIdx].orderAmount += oAmount;
+                    monthsData[monthIdx].paidAmount += pAmount;
+                    monthsData[monthIdx].balanceAmount += bAmount;
+                });
+            }
         });
 
-        return data;
+        return monthsData;
     }, [allOrders, paymentCollectionYear]);
 
     // --- 7. Payment Mode Distribution (Pie Chart) - Filter: Year ---
@@ -444,33 +434,80 @@ const Dashboard = () => {
                                 </select>
                             </div>
                             <div className="h-[300px] w-full">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart data={monthlyPaymentCollections} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                                        <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                                        <YAxis tick={{ fontSize: 12, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={(val) => `₹${val / 1000}k`} />
-                                        <Tooltip
-                                            formatter={(value, name) => [`₹${value.toLocaleString()}`, name]}
-                                            contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                                            cursor={{ fill: '#eff6ff' }}
-                                        />
-                                        <Legend verticalAlign="top" height={36} />
-                                        <Bar
-                                            dataKey="paid"
-                                            name="Paid Amount"
-                                            fill="#10b981" // Emerald-500
-                                            radius={[4, 4, 0, 0]}
-                                            barSize={20}
-                                        />
-                                        <Bar
-                                            dataKey="due"
-                                            name="Due Amount"
-                                            fill="#f43f5e" // Rose-500
-                                            radius={[4, 4, 0, 0]}
-                                            barSize={20}
-                                        />
-                                    </BarChart>
-                                </ResponsiveContainer>
+                                {monthlyPaymentCollections.reduce((a, b) => a + b.orderAmount + b.paidAmount, 0) > 0 ? (
+                                    <ChartJsBar
+                                        data={{
+                                            labels: monthlyPaymentCollections.map(d => d.month),
+                                            datasets: [
+                                                {
+                                                    label: 'Paid Amount',
+                                                    data: monthlyPaymentCollections.map(d => d.paidAmount),
+                                                    backgroundColor: '#10b981', // Emerald-500
+                                                    stack: 'Stack 0',
+                                                },
+                                                {
+                                                    label: 'Balance Amount',
+                                                    data: monthlyPaymentCollections.map(d => d.balanceAmount),
+                                                    backgroundColor: '#f43f5e', // Rose-500
+                                                    stack: 'Stack 0',
+                                                }
+                                            ]
+                                        }}
+                                        options={{
+                                            responsive: true,
+                                            maintainAspectRatio: false,
+                                            interaction: {
+                                                mode: 'index',
+                                                intersect: false,
+                                            },
+                                            plugins: {
+                                                legend: {
+                                                    position: 'top',
+                                                    labels: {
+                                                        usePointStyle: true,
+                                                        pointStyle: 'circle',
+                                                        font: { size: 11 },
+                                                        boxWidth: 8
+                                                    }
+                                                },
+                                                tooltip: {
+                                                    backgroundColor: '#1e293b',
+                                                    padding: 12,
+                                                    cornerRadius: 8,
+                                                    callbacks: {
+                                                        label: (context) => {
+                                                            const label = context.dataset.label || '';
+                                                            const value = context.raw || 0;
+                                                            return ` ${label}: ₹${value.toLocaleString()}`;
+                                                        },
+                                                        footer: (tooltipItems) => {
+                                                            const total = tooltipItems.reduce((a, e) => a + e.raw, 0);
+                                                            return `Total Order Value: ₹${total.toLocaleString()}`;
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            scales: {
+                                                x: {
+                                                    grid: { display: false },
+                                                    ticks: { font: { size: 11 }, color: '#64748b' }
+                                                },
+                                                y: {
+                                                    grid: { borderDash: [2, 4], color: '#f1f5f9' },
+                                                    ticks: {
+                                                        font: { size: 11 },
+                                                        color: '#64748b',
+                                                        callback: (value) => `₹${value / 1000}k`
+                                                    }
+                                                }
+                                            }
+                                        }}
+                                    />
+                                ) : (
+                                    <div className="h-full flex items-center justify-center text-slate-400 text-sm">
+                                        No payment data available for {paymentCollectionYear}.
+                                    </div>
+                                )}
                             </div>
                         </div>
 
@@ -485,34 +522,48 @@ const Dashboard = () => {
                             </div>
                             <div className="flex-1 min-h-[300px]">
                                 {paymentModeData.length > 0 ? (
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <PieChart>
-                                            <Pie
-                                                data={paymentModeData}
-                                                cx="50%"
-                                                cy="50%"
-                                                innerRadius={60}
-                                                outerRadius={100}
-                                                dataKey="value"
-                                                nameKey="name"
-                                                paddingAngle={5}
-                                            >
-                                                {paymentModeData.map((entry, index) => (
-                                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                                ))}
-                                            </Pie>
-                                            <Tooltip
-                                                formatter={(value) => [`₹${value.toLocaleString()}`, 'Received']}
-                                                contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                                            />
-                                            <Legend
-                                                layout="horizontal"
-                                                verticalAlign="bottom"
-                                                align="center"
-                                                iconType="circle"
-                                            />
-                                        </PieChart>
-                                    </ResponsiveContainer>
+                                    <Doughnut
+                                        data={{
+                                            labels: paymentModeData.map(d => d.name),
+                                            datasets: [{
+                                                data: paymentModeData.map(d => d.value),
+                                                backgroundColor: paymentModeData.map((_, i) => COLORS[i % COLORS.length]),
+                                                borderWidth: 0,
+                                                cutout: '60%'
+                                            }]
+                                        }}
+                                        options={{
+                                            responsive: true,
+                                            maintainAspectRatio: false,
+                                            plugins: {
+                                                legend: {
+                                                    position: 'bottom',
+                                                    labels: {
+                                                        usePointStyle: true,
+                                                        pointStyle: 'circle',
+                                                        font: { size: 11 },
+                                                        boxWidth: 8,
+                                                        padding: 20
+                                                    }
+                                                },
+                                                tooltip: {
+                                                    backgroundColor: '#1e293b',
+                                                    padding: 12,
+                                                    cornerRadius: 8,
+                                                    callbacks: {
+                                                        label: (context) => {
+                                                            const label = context.label || '';
+                                                            const value = context.raw || 0;
+                                                            return ` ${label}: ₹${value.toLocaleString()}`;
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            layout: {
+                                                padding: { top: 10, bottom: 10 }
+                                            }
+                                        }}
+                                    />
                                 ) : (
                                     <div className="h-full flex items-center justify-center text-slate-400 text-sm">
                                         No payment data for {paymentCollectionYear}.
@@ -545,35 +596,47 @@ const Dashboard = () => {
                                     {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
                                 </select>
                             </div>
-                            <div className="flex-1 min-h-[300px]">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <PieChart>
-                                        <Pie
-                                            data={monthlyOrdersData}
-                                            cx="50%"
-                                            cy="50%"
-                                            outerRadius={100}
-                                            dataKey="value"
-                                            nameKey="name"
-                                            labelLine={false}
-                                            label={renderCustomizedLabel}
-                                        >
-                                            {monthlyOrdersData.map((entry, index) => (
-                                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                            ))}
-                                        </Pie>
-                                        <Tooltip
-                                            contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                                            formatter={(value, name) => [`${value} Orders`, name]}
-                                        />
-                                        <Legend
-                                            layout="vertical"
-                                            align="right"
-                                            verticalAlign="middle"
-                                            iconType="circle"
-                                        />
-                                    </PieChart>
-                                </ResponsiveContainer>
+                            <div className="flex-1 min-h-[300px] h-[300px]">
+                                <ChartJsPie
+                                    data={{
+                                        labels: monthlyOrdersData.map(d => d.name),
+                                        datasets: [{
+                                            data: monthlyOrdersData.map(d => d.value),
+                                            backgroundColor: monthlyOrdersData.map((_, i) => COLORS[i % COLORS.length]),
+                                            borderWidth: 1
+                                        }]
+                                    }}
+                                    options={{
+                                        responsive: true,
+                                        maintainAspectRatio: false,
+                                        plugins: {
+                                            legend: {
+                                                position: 'right',
+                                                labels: {
+                                                    usePointStyle: true,
+                                                    pointStyle: 'circle',
+                                                    font: { size: 11 },
+                                                    boxWidth: 10
+                                                }
+                                            },
+                                            tooltip: {
+                                                backgroundColor: '#1e293b',
+                                                padding: 12,
+                                                cornerRadius: 8,
+                                                callbacks: {
+                                                    label: (context) => {
+                                                        const label = context.label || '';
+                                                        const value = context.raw || 0;
+                                                        return ` ${label}: ${value} Orders`;
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        layout: {
+                                            padding: { top: 20, bottom: 20 }
+                                        }
+                                    }}
+                                />
                             </div>
                         </div>
 
@@ -606,31 +669,48 @@ const Dashboard = () => {
                                     </select>
                                 </div>
                             </div>
-                            <div className="flex-1 min-h-[300px]">
+                            <div className="flex-1 min-h-[300px] h-[300px]">
                                 {citySalesData.length > 0 ? (
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <PieChart>
-                                            <Pie
-                                                data={citySalesData}
-                                                cx="50%"
-                                                cy="50%"
-                                                outerRadius={100}
-                                                dataKey="value"
-                                                nameKey="name"
-                                                labelLine={false}
-                                                label={renderCustomizedLabel}
-                                            >
-                                                {citySalesData.map((entry, index) => (
-                                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                                ))}
-                                            </Pie>
-                                            <Tooltip
-                                                formatter={(value) => [`₹${value.toLocaleString()}`, 'Sales']}
-                                                contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                                            />
-                                            <Legend iconType="circle" layout="vertical" align="right" verticalAlign="middle" />
-                                        </PieChart>
-                                    </ResponsiveContainer>
+                                    <ChartJsPie
+                                        data={{
+                                            labels: citySalesData.map(d => d.name),
+                                            datasets: [{
+                                                data: citySalesData.map(d => d.value),
+                                                backgroundColor: citySalesData.map((_, i) => COLORS[i % COLORS.length]),
+                                                borderWidth: 1
+                                            }]
+                                        }}
+                                        options={{
+                                            responsive: true,
+                                            maintainAspectRatio: false,
+                                            plugins: {
+                                                legend: {
+                                                    position: 'right',
+                                                    labels: {
+                                                        usePointStyle: true,
+                                                        pointStyle: 'circle',
+                                                        font: { size: 11 },
+                                                        boxWidth: 10
+                                                    }
+                                                },
+                                                tooltip: {
+                                                    backgroundColor: '#1e293b',
+                                                    padding: 12,
+                                                    cornerRadius: 8,
+                                                    callbacks: {
+                                                        label: (context) => {
+                                                            const label = context.label || '';
+                                                            const value = context.raw || 0;
+                                                            return ` ${label}: ₹${value.toLocaleString()}`;
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            layout: {
+                                                padding: { top: 20, bottom: 20 }
+                                            }
+                                        }}
+                                    />
                                 ) : (
                                     <div className="h-full flex items-center justify-center text-slate-400 text-sm">
                                         No sales data for selected period.
