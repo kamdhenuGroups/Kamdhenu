@@ -9,6 +9,7 @@ import toast from 'react-hot-toast';
 import { INDIAN_LOCATIONS } from '../data/indianLocations';
 import { CUSTOMER_TYPES, idGenerator } from '../services/orderService';
 import { addContractorService } from '../services/addContractorService';
+import useAuthStore from '../store/authStore';
 
 // -- Reusable Components --
 
@@ -177,7 +178,13 @@ const SearchableInput = ({ options = [], onSelect, ...props }) => {
 };
 
 const AddContractors = () => {
+    const { user } = useAuthStore();
     const [loading, setLoading] = useState(false);
+
+    // Admin features
+    const isAdmin = user?.Admin === 'Yes';
+    const [usersList, setUsersList] = useState([]);
+    const [selectedUserId, setSelectedUserId] = useState('');
 
     // Form State
     const [contractorName, setContractorName] = useState('');
@@ -191,6 +198,10 @@ const AddContractors = () => {
     const [selectedCity, setSelectedCity] = useState('');
     const [cityCode, setCityCode] = useState('');
 
+    // Validation State
+    const [phoneError, setPhoneError] = useState('');
+    const [isCheckingPhone, setIsCheckingPhone] = useState(false);
+
     // Filtered lists
     const states = Object.keys(INDIAN_LOCATIONS);
 
@@ -203,6 +214,47 @@ const AddContractors = () => {
             setCityCode('');
         }
     }, [selectedCity]);
+
+    // Fetch users for admin
+    useEffect(() => {
+        if (isAdmin) {
+            const fetchUsers = async () => {
+                const { data } = await addContractorService.getUsers();
+                if (data) setUsersList(data);
+            };
+            fetchUsers();
+        }
+    }, [isAdmin]);
+
+    // Check Phone Uniqueness
+    useEffect(() => {
+        const checkPhone = async () => {
+            if (customerPhone.length === 10) {
+                setIsCheckingPhone(true);
+                const { exists, error } = await addContractorService.checkPhoneUnique(customerPhone);
+                setIsCheckingPhone(false);
+
+                if (error) {
+                    console.error('Phone check error:', error);
+                    return;
+                }
+
+                if (exists) {
+                    setPhoneError('phone number is already available');
+                } else {
+                    setPhoneError('');
+                }
+            } else {
+                setPhoneError('');
+            }
+        };
+
+        const timeoutId = setTimeout(() => {
+            if (customerPhone) checkPhone();
+        }, 500);
+
+        return () => clearTimeout(timeoutId);
+    }, [customerPhone]);
 
     // Generate ID for preview
     const generatedId = useMemo(() => {
@@ -232,8 +284,20 @@ const AddContractors = () => {
             toast.error('Please enter a valid phone number');
             return;
         }
+        if (phoneError) {
+            toast.error(phoneError);
+            return;
+        }
+        if (isCheckingPhone) {
+            toast.error('Verifying phone number...');
+            return;
+        }
         if (!selectedState || !selectedCity) {
             toast.error('Please select state and city');
+            return;
+        }
+        if (isAdmin && !selectedUserId) {
+            toast.error('Please assign to a user');
             return;
         }
         if ((customerType === 'Contractor' || customerType === 'Mistry') && !nickname) {
@@ -268,6 +332,12 @@ const AddContractors = () => {
                     throw error;
                 }
             } else {
+                // Assign to user
+                const targetUserId = isAdmin ? selectedUserId : user?.user_id;
+                if (targetUserId) {
+                    await addContractorService.assignContractorToUser(targetUserId, contractorPayload.contractor_id);
+                }
+
                 toast.success('Contractor added successfully!');
                 // Reset form
                 setContractorName('');
@@ -277,6 +347,7 @@ const AddContractors = () => {
                 setMistryName('');
                 setSelectedState('');
                 setSelectedCity('');
+                if (isAdmin) setSelectedUserId('');
             }
         } catch (error) {
             console.error(error);
@@ -294,6 +365,7 @@ const AddContractors = () => {
         setMistryName('');
         setSelectedState('');
         setSelectedCity('');
+        if (isAdmin) setSelectedUserId('');
     };
 
     return (
@@ -330,6 +402,25 @@ const AddContractors = () => {
 
                         {/* Section 1: Identity */}
                         <SectionHeader title="Identity & Role" icon={User} />
+
+                        {isAdmin && (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6 mb-6">
+                                <InputGroup label="Assign To User" required>
+                                    <SelectInput
+                                        value={selectedUserId}
+                                        onChange={(e) => setSelectedUserId(e.target.value)}
+                                        required
+                                    >
+                                        <option value="" disabled>Select User...</option>
+                                        {usersList.map(u => (
+                                            <option key={u.user_id} value={u.user_id}>
+                                                {u.full_name} ({u.role || 'User'})
+                                            </option>
+                                        ))}
+                                    </SelectInput>
+                                </InputGroup>
+                            </div>
+                        )}
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6 mb-4">
                             <InputGroup label="Type" required>
@@ -386,14 +477,28 @@ const AddContractors = () => {
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6 mb-4">
                             <InputGroup label="Primary Phone" required>
-                                <TextInput
-                                    type="tel"
-                                    value={customerPhone}
-                                    onChange={(e) => setCustomerPhone(e.target.value)}
-                                    placeholder="9876543210"
-                                    maxLength={10}
-                                    required
-                                />
+                                <div className="relative">
+                                    <TextInput
+                                        type="tel"
+                                        value={customerPhone}
+                                        onChange={(e) => {
+                                            const val = e.target.value.replace(/\D/g, '');
+                                            if (val.length <= 10) setCustomerPhone(val);
+                                        }}
+                                        placeholder="9876543210"
+                                        maxLength={10}
+                                        required
+                                        className={phoneError ? "border-destructive focus-visible:ring-destructive pr-10" : ""}
+                                    />
+                                    {isCheckingPhone && (
+                                        <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                                            <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                                        </div>
+                                    )}
+                                </div>
+                                {phoneError && (
+                                    <p className="text-xs text-destructive font-medium mt-1 ml-1">{phoneError}</p>
+                                )}
                             </InputGroup>
                         </div>
 
