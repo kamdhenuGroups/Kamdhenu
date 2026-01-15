@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Search, ChevronRight, X } from 'lucide-react';
+import { Search, ChevronRight, X, AlertCircle } from 'lucide-react';
 import {
     getContractors,
     getUserAssignments,
@@ -22,6 +22,9 @@ const ContractorVisibility = ({ users }) => {
     const [expandedUserId, setExpandedUserId] = useState(null);
     const [userAssignments, setUserAssignments] = useState({}); // { userId: [contractor_id, ...] }
     const [processingAssignment, setProcessingAssignment] = useState(false);
+    const [pendingRemoval, setPendingRemoval] = useState(null);
+    const [dragOverUserId, setDragOverUserId] = useState(null);
+    const [dragEnterTime, setDragEnterTime] = useState(0);
 
     // Fetch Contractors and Assignments on mount
     useEffect(() => {
@@ -98,9 +101,27 @@ const ContractorVisibility = ({ users }) => {
         e.dataTransfer.effectAllowed = 'copy';
     };
 
-    const handleDragOver = (e) => {
+    const handleDragOver = (e, userId) => {
         e.preventDefault();
         e.dataTransfer.dropEffect = 'copy';
+
+        if (dragOverUserId !== userId) {
+            setDragOverUserId(userId);
+            setDragEnterTime(Date.now());
+        } else {
+            // Auto expand if hovered for more than 500ms
+            if (Date.now() - dragEnterTime > 500 && expandedUserId !== userId) {
+                setExpandedUserId(userId);
+            }
+        }
+    };
+
+    const handleDragLeave = (e) => {
+        // Only clear if we are leaving the main container of the user card
+        // This acts as a simple debounce/check
+        if (!e.currentTarget.contains(e.relatedTarget)) {
+            setDragOverUserId(null);
+        }
     };
 
     const handleDropOnUser = async (e, targetUserId) => {
@@ -142,11 +163,17 @@ const ContractorVisibility = ({ users }) => {
             setUserAssignments(previousAssignments);
         } finally {
             setProcessingAssignment(false);
+            setDragOverUserId(null); // Clear drag state
         }
     };
 
-    const removeAssignment = async (userId, contractorId) => {
-        if (!confirm('Are you sure you want to revoke access?')) return;
+    const removeAssignment = (userId, contractorId) => {
+        setPendingRemoval({ userId, contractorId });
+    };
+
+    const handleConfirmRemoval = async () => {
+        if (!pendingRemoval) return;
+        const { userId, contractorId } = pendingRemoval;
 
         // Optimistic Update
         const previousAssignments = { ...userAssignments };
@@ -162,6 +189,8 @@ const ContractorVisibility = ({ users }) => {
             console.error('Revoke error:', error);
             toast.error('Failed to revoke access');
             setUserAssignments(previousAssignments);
+        } finally {
+            setPendingRemoval(null);
         }
     };
 
@@ -264,11 +293,14 @@ const ContractorVisibility = ({ users }) => {
                             return (
                                 <div
                                     key={user.user_id}
-                                    onDragOver={handleDragOver}
+                                    onDragOver={(e) => handleDragOver(e, user.user_id)}
+                                    onDragLeave={handleDragLeave}
                                     onDrop={(e) => handleDropOnUser(e, user.user_id)}
                                     className={`rounded-xl border transition-all duration-300 ${isExpanded
                                         ? 'border-purple-200 bg-purple-50/30'
-                                        : 'border-slate-100 hover:border-purple-200 bg-white'
+                                        : dragOverUserId === user.user_id // Highlight on Drag Over
+                                            ? 'border-purple-400 bg-purple-100/50 shadow-md ring-1 ring-purple-200'
+                                            : 'border-slate-100 hover:border-purple-200 bg-white'
                                         }`}
                                 >
                                     <div
@@ -343,7 +375,41 @@ const ContractorVisibility = ({ users }) => {
                     )}
                 </div>
             </div>
-        </div>
+
+
+            {/* Confirmation Modal */}
+            {
+                pendingRemoval && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/20 backdrop-blur-sm animate-in fade-in run-fast">
+                        <div className="bg-white rounded-2xl shadow-xl border border-slate-100 p-6 w-full max-w-sm transform transition-all scale-100 animate-in zoom-in-95">
+                            <div className="flex flex-col items-center text-center">
+                                <div className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center mb-4">
+                                    <AlertCircle className="text-red-500" size={24} />
+                                </div>
+                                <h3 className="text-lg font-bold text-slate-800 mb-2">Revoke Access?</h3>
+                                <p className="text-sm text-slate-500 mb-6">
+                                    Are you sure you want to remove this contractor from the user's access list?
+                                </p>
+                                <div className="flex gap-3 w-full">
+                                    <button
+                                        onClick={() => setPendingRemoval(null)}
+                                        className="flex-1 px-4 py-2.5 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl text-sm font-medium transition-colors border border-slate-200"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={handleConfirmRemoval}
+                                        className="flex-1 px-4 py-2.5 bg-red-500 hover:bg-red-600 text-white rounded-xl text-sm font-medium shadow-sm transition-colors shadow-red-200"
+                                    >
+                                        Revoke
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+        </div >
     );
 };
 
