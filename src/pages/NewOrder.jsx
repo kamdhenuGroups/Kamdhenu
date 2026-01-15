@@ -173,7 +173,7 @@ const NewOrder = () => {
     const [currentAllocation, setCurrentAllocation] = useState({
         role: '',
         name: '',
-        phoneLast4: '',
+        phoneLast5: '',
         points: ''
     });
     const [showAllocationRoleDropdown, setShowAllocationRoleDropdown] = useState(false);
@@ -395,15 +395,27 @@ const NewOrder = () => {
     const remainingPoints = totalOrderPoints - totalAllocatedPoints;
 
     const handleAddAllocation = () => {
-        const { role, name, phoneLast4, points } = currentAllocation;
+        const { role, name, phoneLast5, points } = currentAllocation;
 
-        if (!role || !name || !phoneLast4 || !points) {
+        if (!role || !name || !phoneLast5 || !points) {
             toast.error('Please fill all allocation fields');
             return;
         }
 
-        if (phoneLast4.length !== 4) {
-            toast.error('Phone last digits must be exactly 4 numbers');
+        if (phoneLast5.length !== 5) {
+            toast.error('Phone last digits must be exactly 5 numbers');
+            return;
+        }
+
+        // Check for duplicates
+        const isDuplicate = pointsAllocations.some(a =>
+            a.name.toLowerCase() === name.toLowerCase() &&
+            a.role === role &&
+            a.phoneLast5 === phoneLast5
+        );
+
+        if (isDuplicate) {
+            toast.error('This user has already been selected');
             return;
         }
 
@@ -427,7 +439,7 @@ const NewOrder = () => {
         setCurrentAllocation({
             role: '',
             name: '',
-            phoneLast4: '',
+            phoneLast5: '',
             points: ''
         });
         setIsExistingBeneficiary(false);
@@ -601,7 +613,7 @@ const NewOrder = () => {
             setCurrentAllocation({
                 role: '',
                 name: '',
-                phoneLast4: '',
+                phoneLast5: '',
                 points: ''
             });
             setIsExistingBeneficiary(false);
@@ -1276,7 +1288,12 @@ const NewOrder = () => {
                                                         {item.showDropdown && (
                                                             <>
                                                                 <div className="absolute z-20 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-60 overflow-y-auto custom-scrollbar flex flex-col animate-in fade-in zoom-in-95 duration-100 min-w-[200px]">
-                                                                    {PRODUCTS.map((p, idx) => (
+                                                                    {PRODUCTS.filter(p => {
+                                                                        const otherSelected = items
+                                                                            .filter(i => i.id !== item.id && i.product)
+                                                                            .map(i => i.product);
+                                                                        return !otherSelected.includes(p.name);
+                                                                    }).map((p, idx) => (
                                                                         <div
                                                                             key={idx}
                                                                             className="px-4 py-3 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0"
@@ -1295,6 +1312,16 @@ const NewOrder = () => {
                                                                             </div>
                                                                         </div>
                                                                     ))}
+                                                                    {PRODUCTS.filter(p => {
+                                                                        const otherSelected = items
+                                                                            .filter(i => i.id !== item.id && i.product)
+                                                                            .map(i => i.product);
+                                                                        return !otherSelected.includes(p.name);
+                                                                    }).length === 0 && (
+                                                                            <div className="px-4 py-3 text-sm text-slate-400 text-center">
+                                                                                No more products available
+                                                                            </div>
+                                                                        )}
                                                                 </div>
                                                             </>
                                                         )}
@@ -1424,7 +1451,7 @@ const NewOrder = () => {
                                                                     className="px-4 py-2 hover:bg-slate-50 cursor-pointer border-b border-slate-50 text-sm italic text-slate-500"
                                                                     onClick={() => {
                                                                         setIsExistingBeneficiary(false);
-                                                                        setCurrentAllocation({ role: '', name: '', phoneLast4: '', points: currentAllocation.points });
+                                                                        setCurrentAllocation({ role: '', name: '', phoneLast5: '', points: currentAllocation.points });
                                                                         setShowBeneficiaryDropdown(false);
                                                                     }}
                                                                 >
@@ -1439,14 +1466,14 @@ const NewOrder = () => {
                                                                                 ...currentAllocation,
                                                                                 role: b.role,
                                                                                 name: b.person_name,
-                                                                                phoneLast4: b.phone_last_4
+                                                                                phoneLast5: b.phone_last_5
                                                                             });
                                                                             setIsExistingBeneficiary(true);
                                                                             setShowBeneficiaryDropdown(false);
                                                                         }}
                                                                     >
                                                                         <div className="font-semibold">{b.person_name}</div>
-                                                                        <div className="text-[10px] text-slate-400">{b.role}-{b.phone_last_4}</div>
+                                                                        <div className="text-[10px] text-slate-400">{b.role}-{b.phone_last_5}</div>
                                                                     </div>
                                                                 ))}
                                                                 {availableBeneficiaries.length === 0 && (
@@ -1480,6 +1507,7 @@ const NewOrder = () => {
                                                                         className={`px-4 py-2 hover:bg-slate-50 cursor-pointer border-b border-slate-50 last:border-0 text-sm ${currentAllocation.role === role ? 'bg-primary/5 text-primary font-bold' : 'text-slate-600'}`}
                                                                         onClick={() => {
                                                                             setCurrentAllocation({ ...currentAllocation, role });
+                                                                            setIsExistingBeneficiary(false);
                                                                             setShowAllocationRoleDropdown(false);
                                                                         }}
                                                                     >
@@ -1504,12 +1532,12 @@ const NewOrder = () => {
                                                 />
                                                 <input
                                                     type="text"
-                                                    maxLength="4"
-                                                    placeholder="Last 4 digits"
-                                                    value={currentAllocation.phoneLast4}
+                                                    maxLength="5"
+                                                    placeholder="Last 5 Digit Phone No."
+                                                    value={currentAllocation.phoneLast5}
                                                     onChange={(e) => {
                                                         const val = e.target.value.replace(/\D/g, '');
-                                                        setCurrentAllocation({ ...currentAllocation, phoneLast4: val });
+                                                        setCurrentAllocation({ ...currentAllocation, phoneLast5: val });
                                                     }}
                                                     disabled={isExistingBeneficiary}
                                                     className={`block w-full px-3 py-2 border border-slate-200 rounded-lg focus:border-primary outline-none text-sm ${isExistingBeneficiary ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'bg-white'}`}
@@ -1530,7 +1558,7 @@ const NewOrder = () => {
                                                 <button
                                                     type="button"
                                                     onClick={handleAddAllocation}
-                                                    disabled={!currentAllocation.role || !currentAllocation.name || currentAllocation.phoneLast4.length !== 4 || !currentAllocation.points || parseInt(currentAllocation.points) > remainingPoints}
+                                                    disabled={!currentAllocation.role || !currentAllocation.name || currentAllocation.phoneLast5.length !== 5 || !currentAllocation.points || parseInt(currentAllocation.points) > remainingPoints}
                                                     className="px-4 py-2 bg-slate-800 text-white rounded-lg text-xs font-bold uppercase tracking-wider hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                                                 >
                                                     Add
@@ -1552,7 +1580,7 @@ const NewOrder = () => {
                                                                 <span className="text-xs font-bold text-slate-700">{alloc.name}</span>
                                                                 <span className="text-[10px] px-1.5 py-0.5 bg-slate-100 rounded text-slate-500 uppercase">{alloc.role}</span>
                                                             </div>
-                                                            <div className="text-[10px] text-slate-400 mt-0.5">{alloc.role}-{alloc.phoneLast4}</div>
+                                                            <div className="text-[10px] text-slate-400 mt-0.5">{alloc.role}-{alloc.phoneLast5}</div>
                                                         </div>
                                                         <div className="flex items-center gap-3">
                                                             <span className="text-sm font-bold text-primary">{alloc.points} P</span>
@@ -2240,7 +2268,7 @@ const NewOrder = () => {
                                                     <tr>
                                                         <th className="px-5 py-3">Person Name</th>
                                                         <th className="px-5 py-3">Role</th>
-                                                        <th className="px-5 py-3 text-right">Phone (Last 4)</th>
+                                                        <th className="px-5 py-3 text-right">Phone (Last 5)</th>
                                                         <th className="px-5 py-3 text-right">Points</th>
                                                     </tr>
                                                 </thead>
@@ -2255,7 +2283,7 @@ const NewOrder = () => {
                                                                     </span>
                                                                 </td>
                                                                 <td className="px-5 py-3 text-slate-600 text-right tabular-nums tracking-wider text-xs font-mono">
-                                                                    ••• {alloc.phone_last_4}
+                                                                    ••• {alloc.phone_last_5}
                                                                 </td>
                                                                 <td className="px-5 py-3 text-emerald-600 text-right font-bold tabular-nums">
                                                                     +{alloc.allocated_points} P

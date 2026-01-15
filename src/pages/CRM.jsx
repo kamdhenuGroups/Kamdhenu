@@ -567,7 +567,7 @@ const CRM = () => {
                                             <tr>
                                                 <th className="px-4 py-2 font-medium">Name</th>
                                                 <th className="px-4 py-2 font-medium">Role</th>
-                                                <th className="px-4 py-2 font-medium text-right">Phone (Last 4)</th>
+                                                <th className="px-4 py-2 font-medium text-right">Phone (Last 5)</th>
                                                 <th className="px-4 py-2 font-medium text-right">Allocated Points</th>
                                             </tr>
                                         </thead>
@@ -581,7 +581,7 @@ const CRM = () => {
                                                                 {alloc.role}
                                                             </span>
                                                         </td>
-                                                        <td className="px-4 py-2 text-right text-slate-600">...{alloc.phone_last_4}</td>
+                                                        <td className="px-4 py-2 text-right text-slate-600">...{alloc.phone_last_5}</td>
                                                         <td className="px-4 py-2 text-right font-bold text-blue-600">+{alloc.allocated_points}</td>
                                                     </tr>
                                                 ))

@@ -71,7 +71,7 @@ CREATE TABLE public.points_allocation (
   order_id text NOT NULL,
   person_name text NOT NULL,
   role text NOT NULL,
-  phone_last_4 character NOT NULL CHECK (phone_last_4 ~ '^[0-9]{4}$'::text),
+  phone_last_5 character(5) NOT NULL CHECK (phone_last_5 ~ '^[0-9]{5}$'::text),
   allocated_points integer NOT NULL CHECK (allocated_points >= 0),
   created_at timestamp without time zone DEFAULT (now() AT TIME ZONE 'Asia/Kolkata'::text),
   CONSTRAINT points_allocation_pkey PRIMARY KEY (id),

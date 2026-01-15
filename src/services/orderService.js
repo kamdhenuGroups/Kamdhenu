@@ -168,7 +168,7 @@ export const orderService = {
                     order_id: order.order_id,
                     person_name: alloc.name,
                     role: alloc.role,
-                    phone_last_4: alloc.phoneLast4,
+                    phone_last_5: alloc.phoneLast5,
                     allocated_points: parseInt(alloc.points)
                 }));
 
@@ -378,7 +378,7 @@ export const orderService = {
         try {
             const { data, error } = await supabase
                 .from('points_allocation')
-                .select('person_name, role, phone_last_4')
+                .select('person_name, role, phone_last_5')
                 .order('created_at', { ascending: false });
 
             if (error) throw error;
@@ -389,7 +389,7 @@ export const orderService = {
 
             for (const item of data) {
                 if (!item.person_name || !item.role) continue;
-                const key = `${item.role.toLowerCase()}-${item.person_name.toLowerCase()}-${item.phone_last_4}`;
+                const key = `${item.role.toLowerCase()}-${item.person_name.toLowerCase()}-${item.phone_last_5}`;
                 if (!seen.has(key)) {
                     seen.add(key);
                     uniqueBeneficiaries.push(item);
