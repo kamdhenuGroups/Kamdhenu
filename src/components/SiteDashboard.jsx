@@ -465,11 +465,7 @@ const SiteDashboard = () => {
                                 }}
                             />
                         </div>
-                        {dashboardData.lineChartData.datasets[0].data.every(d => d === 0) && dashboardData.lineChartData.datasets[1].data.every(d => d === 0) && (
-                            <div className="absolute inset-0 flex items-center justify-center bg-white/50 z-10">
-                                <span className="text-slate-400 text-sm italic">No data for this period</span>
-                            </div>
-                        )}
+
                     </div>
 
 
