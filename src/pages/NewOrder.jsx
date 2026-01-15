@@ -293,7 +293,13 @@ const NewOrder = () => {
     }, [currentUser, selectedCity, customerPhone, contractorName, customerType, nickname, mistryName, deliveryAddress]);
 
     const getGeneratedCustomerId = () => {
-        if (selectedContractorId) return selectedContractorId;
+        if (selectedContractorId) {
+            // If creating a Mistri order under a Contractor, generate new ID instead of using Contractor's ID
+            const isMistriId = selectedContractorId.toUpperCase().startsWith('MI');
+            if (customerType !== 'Mistry' || isMistriId) {
+                return selectedContractorId;
+            }
+        }
         return idGenerator.generateCustomerId({
             customerPhone,
             cityCode,

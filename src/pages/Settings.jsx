@@ -25,6 +25,7 @@ const ALL_PAGES = [
     { id: 'my-profile', label: 'My Profile' },
     { id: 'settings', label: 'Settings' },
     { id: 'new-order', label: 'New Order' },
+    { id: 'create-order', label: 'Create Order' },
     { id: 'leads', label: 'Leads' },
     { id: 'crm', label: 'CRM' },
     { id: 'order-details', label: 'Order Details' },

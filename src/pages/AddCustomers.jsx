@@ -296,6 +296,12 @@ const AddCustomers = () => {
         return null;
     };
 
+    const getCityCode = (cityName) => {
+        if (!cityName) return 'XXX';
+        if (cityName.trim().toLowerCase() === 'raipur') return 'RPR';
+        return cityName.length >= 3 ? cityName.substring(0, 3).toUpperCase() : 'XXX';
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
 
@@ -310,7 +316,7 @@ const AddCustomers = () => {
         try {
             // Generate Customer ID: CU/PhoneLast4/CityFirst3/Name
             const phoneLast4 = formData.primary_phone.slice(-4);
-            const cityFirst3 = formData.city.substring(0, 3).toUpperCase();
+            const cityFirst3 = getCityCode(formData.city);
             const safeName = formData.customer_name.trim();
             const customId = `CU/${phoneLast4}/${cityFirst3}/${safeName}`;
 
@@ -391,7 +397,7 @@ const AddCustomers = () => {
 
     const generatedCustomerId = useMemo(() => {
         const phoneLast4 = formData.primary_phone?.length >= 4 ? formData.primary_phone.slice(-4) : 'XXXX';
-        const cityFirst3 = formData.city?.length >= 3 ? formData.city.substring(0, 3).toUpperCase() : 'XXX';
+        const cityFirst3 = getCityCode(formData.city);
         const safeName = formData.customer_name?.trim() || 'NAME';
         return `CU/${phoneLast4}/${cityFirst3}/${safeName}`;
     }, [formData.primary_phone, formData.city, formData.customer_name]);

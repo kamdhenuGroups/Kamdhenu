@@ -18,7 +18,8 @@ import {
   FileText,
   UserPlus,
   DollarSign,
-  MapPin
+  MapPin,
+  ShoppingBag
 } from 'lucide-react';
 
 const Sidebar = ({ onClose }) => {
@@ -86,6 +87,7 @@ const Sidebar = ({ onClose }) => {
   const MASTER_MENU_ITEMS = [
     { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', id: 'dashboard' },
     { path: '/new-order', icon: ShoppingCart, label: 'New Order', id: 'new-order' },
+    { path: '/create-order', icon: ShoppingBag, label: 'Create Order', id: 'create-order' },
     { path: '/add-customers', icon: UserPlus, label: 'Add Customers', id: 'add-customers' },
     { path: '/add-sites', icon: MapPin, label: 'Add Sites', id: 'add-sites' },
     { path: '/cac', icon: DollarSign, label: 'CAC', id: 'cac' },
