@@ -138,3 +138,81 @@ export const createCacEntry = async (cacPayload, billImages, user) => {
         throw error;
     }
 };
+
+/**
+ * Creates multiple CAC entries (split expense) and links uploads to all of them.
+ * @param {Array} cacPayloads - Array of CAC entry objects
+ * @param {Array} billImages - Array of file objects
+ * @param {Object} user - The current user object
+ * @returns {Promise<void>}
+ */
+export const createSharedCacEntries = async (cacPayloads, billImages, user) => {
+    try {
+        // 1. Create CAC Entries in Batch
+        const { data: cacDataList, error: cacError } = await supabase
+            .from('cac')
+            .insert(cacPayloads)
+            .select();
+
+        if (cacError) throw cacError;
+
+        if (!cacDataList || cacDataList.length === 0) return;
+
+        // 2. Upload Images (Once) and get URLs
+        let uploadedBills = [];
+        if (billImages && billImages.length > 0) {
+            const uploadPromises = billImages.map(async (file) => {
+                const fileExt = file.name.split('.').pop();
+                const fileName = `cac-bills/${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
+
+                // Upload to Storage
+                const { error: uploadError } = await supabase.storage
+                    .from('images')
+                    .upload(fileName, file);
+
+                if (uploadError) throw uploadError;
+
+                // Get Public URL
+                const { data: urlData } = supabase.storage
+                    .from('images')
+                    .getPublicUrl(fileName);
+
+                return {
+                    url: urlData.publicUrl,
+                    name: file.name,
+                    type: file.type
+                };
+            });
+
+            uploadedBills = await Promise.all(uploadPromises);
+        }
+
+        // 3. Link Uploaded Bills to ALL created CAC entries
+        if (uploadedBills.length > 0) {
+            const billInserts = [];
+
+            cacDataList.forEach(cacEntry => {
+                uploadedBills.forEach(bill => {
+                    billInserts.push({
+                        cac_id: cacEntry.id,
+                        bill_url: bill.url,
+                        file_name: bill.name,
+                        file_type: bill.type,
+                        uploaded_by: user.user_id
+                    });
+                });
+            });
+
+            const { error: billsError } = await supabase
+                .from('cac_bills')
+                .insert(billInserts);
+
+            if (billsError) throw billsError;
+        }
+
+        return cacDataList;
+    } catch (error) {
+        console.error('Error creating shared CAC entries in service:', error);
+        throw error;
+    }
+};
