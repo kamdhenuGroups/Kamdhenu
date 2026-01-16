@@ -102,9 +102,11 @@ const SearchableInput = ({ options = [], onSelect, ...props }) => {
 
     const filteredOptions = useMemo(() => {
         if (!props.value) return options;
-        return options.filter(opt =>
-            opt.toLowerCase().includes(props.value.toLowerCase())
-        );
+        const normalizedSearch = props.value.toLowerCase();
+        return options.filter(opt => {
+            const label = typeof opt === 'string' ? opt : opt.label;
+            return label.toLowerCase().includes(normalizedSearch);
+        });
     }, [options, props.value]);
 
     const dropdown = isOpen && filteredOptions.length > 0 ? (
@@ -120,19 +122,25 @@ const SearchableInput = ({ options = [], onSelect, ...props }) => {
             }}
             className="bg-popover text-popover-foreground border border-border rounded-xl shadow-lg max-h-60 overflow-y-auto custom-scrollbar ring-1 ring-black/5 animate-in fade-in zoom-in-95 duration-100"
         >
-            {filteredOptions.map((option) => (
-                <button
-                    key={option}
-                    type="button"
-                    className="w-full text-left px-4 py-2.5 text-sm hover:bg-accent hover:text-accent-foreground transition-colors first:rounded-t-lg last:rounded-b-lg"
-                    onClick={() => {
-                        onSelect(option);
-                        setIsOpen(false);
-                    }}
-                >
-                    {option}
-                </button>
-            ))}
+            {filteredOptions.map((option) => {
+                const isString = typeof option === 'string';
+                const label = isString ? option : option.label;
+                const value = isString ? option : option.value;
+
+                return (
+                    <button
+                        key={value}
+                        type="button"
+                        className="w-full text-left px-4 py-2.5 text-sm hover:bg-accent hover:text-accent-foreground transition-colors first:rounded-t-lg last:rounded-b-lg"
+                        onClick={() => {
+                            onSelect(option);
+                            setIsOpen(false);
+                        }}
+                    >
+                        {label}
+                    </button>
+                );
+            })}
         </div>
     ) : null;
 
@@ -185,6 +193,7 @@ const AddContractors = () => {
     const isAdmin = user?.Admin === 'Yes';
     const [usersList, setUsersList] = useState([]);
     const [selectedUserId, setSelectedUserId] = useState('');
+    const [userSearchText, setUserSearchText] = useState('');
 
     // Form State
     const [contractorName, setContractorName] = useState('');
@@ -227,6 +236,14 @@ const AddContractors = () => {
             fetchUsers();
         }
     }, [isAdmin]);
+
+    const userOptions = useMemo(() => {
+        return usersList.map(u => ({
+            label: `${u.full_name} (${u.user_id}) - ${u.role || 'User'}`,
+            value: u.user_id,
+            original: u
+        }));
+    }, [usersList]);
 
     // Check Phone Uniqueness
     useEffect(() => {
@@ -397,7 +414,10 @@ const AddContractors = () => {
                 setMistryName('');
                 setSelectedState('');
                 setSelectedCity('');
-                if (isAdmin) setSelectedUserId('');
+                if (isAdmin) {
+                    setSelectedUserId('');
+                    setUserSearchText('');
+                }
             }
         } catch (error) {
             console.error(error);
@@ -415,7 +435,10 @@ const AddContractors = () => {
         setMistryName('');
         setSelectedState('');
         setSelectedCity('');
-        if (isAdmin) setSelectedUserId('');
+        if (isAdmin) {
+            setSelectedUserId('');
+            setUserSearchText('');
+        }
     };
 
     return (
@@ -469,34 +492,36 @@ const AddContractors = () => {
                         {isAdmin && (
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6 mb-6">
                                 <InputGroup label="Assign To User" required>
-                                    <SelectInput
-                                        value={selectedUserId}
-                                        onChange={(e) => setSelectedUserId(e.target.value)}
+                                    <SearchableInput
+                                        name="assignedUser"
+                                        value={userSearchText}
+                                        onChange={(e) => {
+                                            setUserSearchText(e.target.value);
+                                            setSelectedUserId(''); // Reset selection on change
+                                        }}
+                                        onSelect={(opt) => {
+                                            setUserSearchText(opt.label);
+                                            setSelectedUserId(opt.value);
+                                        }}
+                                        options={userOptions}
+                                        placeholder="Search User..."
                                         required
-                                    >
-                                        <option value="" disabled>Select User...</option>
-                                        {usersList.map(u => (
-                                            <option key={u.user_id} value={u.user_id}>
-                                                {u.full_name} ({u.role || 'User'})
-                                            </option>
-                                        ))}
-                                    </SelectInput>
+                                    />
                                 </InputGroup>
                             </div>
                         )}
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6 mb-4">
                             <InputGroup label="Type" required>
-                                <SelectInput
+                                <SearchableInput
+                                    name="customerType"
                                     value={customerType}
                                     onChange={(e) => setCustomerType(e.target.value)}
+                                    onSelect={(val) => setCustomerType(val)}
+                                    options={CUSTOMER_TYPES.filter(t => t !== 'Customer')}
+                                    placeholder="Select Role"
                                     required
-                                >
-                                    <option value="" disabled>Select Role...</option>
-                                    {CUSTOMER_TYPES.filter(t => t !== 'Customer').map(type => (
-                                        <option key={type} value={type}>{type}</option>
-                                    ))}
-                                </SelectInput>
+                                />
                             </InputGroup>
 
                             <InputGroup label="Contractor's Name" required>
