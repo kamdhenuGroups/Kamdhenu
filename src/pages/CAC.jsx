@@ -786,6 +786,7 @@ const CAC = () => {
                                             <th className="px-4 py-3 whitespace-nowrap">Influencer Name</th>
                                             <th className="px-4 py-3 whitespace-nowrap">Amount (₹)</th>
                                             <th className="px-4 py-3 whitespace-nowrap">Exp. Category</th>
+                                            <th className="px-4 py-3 whitespace-nowrap">Remarks</th>
 
                                             <th className="px-4 py-3 whitespace-nowrap">Reimbursement Status</th>
                                             <th className="px-4 py-3 whitespace-nowrap">Reimbursed Amt.</th>
@@ -821,6 +822,9 @@ const CAC = () => {
                                                             {entry.expense_category}
                                                         </span>
                                                     ) : '-'}
+                                                </td>
+                                                <td className="px-4 py-3 text-xs whitespace-nowrap max-w-[200px] truncate" title={entry.remarks}>
+                                                    {entry.remarks || '-'}
                                                 </td>
 
                                                 <td className="px-4 py-3 text-xs whitespace-nowrap">

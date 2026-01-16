@@ -48,6 +48,12 @@ const ContractorVisibility = ({ users }) => {
     const filteredContractors = useMemo(() => {
         let result = contractors;
 
+        // Filter out contractors that are already assigned to any user
+        const assignedContractorIds = new Set(
+            Object.values(userAssignments).flat()
+        );
+        result = result.filter(c => !assignedContractorIds.has(c.contractor_id));
+
         if (customerTypeFilter !== 'All') {
             result = result.filter(c => c.customer_type === customerTypeFilter);
         }
@@ -62,7 +68,7 @@ const ContractorVisibility = ({ users }) => {
             );
         }
         return result;
-    }, [contractors, contractorSearchTerm, customerTypeFilter]);
+    }, [contractors, contractorSearchTerm, customerTypeFilter, userAssignments]);
 
     // Filtered Users
     const filteredAccessUsers = useMemo(() => {

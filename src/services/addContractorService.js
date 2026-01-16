@@ -33,6 +33,36 @@ export const addContractorService = {
         }
     },
 
+    checkIdUnique: async (id) => {
+        try {
+            const { data, error } = await supabase
+                .from('contractor_data')
+                .select('contractor_id')
+                .eq('contractor_id', id);
+
+            if (error) throw error;
+            return { exists: data.length > 0, error: null };
+        } catch (error) {
+            console.error('Error checking ID uniqueness:', error);
+            return { exists: false, error };
+        }
+    },
+
+    checkContractorNameUnique: async (name) => {
+        try {
+            const { data, error } = await supabase
+                .from('contractor_data')
+                .select('contractor_name')
+                .eq('contractor_name', name);
+
+            if (error) throw error;
+            return { exists: data.length > 0, error: null };
+        } catch (error) {
+            console.error('Error checking Name uniqueness:', error);
+            return { exists: false, error };
+        }
+    },
+
     // Fetch all active users (for admin selection)
     getUsers: async () => {
         try {

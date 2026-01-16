@@ -564,8 +564,8 @@ export const idGenerator = {
         else if (customerType === 'Distributor') typePrefix = 'D';
         else if (customerType === 'Customer') typePrefix = 'CU';
 
-        // Normalize text to Uppercase for consistency and uniqueness checks
-        let normContractorName = contractorName.toUpperCase();
+        // Use original case for Contractor Name, uppercase others for consistency
+        let normContractorName = contractorName;
         const normNickname = nickname ? nickname.toUpperCase() : '';
         const normMistryName = mistryName ? mistryName.toUpperCase() : '';
 

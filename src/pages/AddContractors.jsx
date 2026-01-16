@@ -201,6 +201,8 @@ const AddContractors = () => {
     // Validation State
     const [phoneError, setPhoneError] = useState('');
     const [isCheckingPhone, setIsCheckingPhone] = useState(false);
+    const [idError, setIdError] = useState('');
+    const [isCheckingId, setIsCheckingId] = useState(false);
 
     // Filtered lists
     const states = Object.keys(INDIAN_LOCATIONS);
@@ -240,7 +242,7 @@ const AddContractors = () => {
                 }
 
                 if (exists) {
-                    setPhoneError('phone number is already available');
+                    setPhoneError('Phone number is already available.');
                 } else {
                     setPhoneError('');
                 }
@@ -268,6 +270,36 @@ const AddContractors = () => {
         });
     }, [customerPhone, cityCode, contractorName, customerType, nickname, mistryName]);
 
+    // Check ID Uniqueness
+    useEffect(() => {
+        const checkId = async () => {
+            if (generatedId && generatedId !== 'Pending...') {
+                setIsCheckingId(true);
+                const { exists, error } = await addContractorService.checkIdUnique(generatedId);
+                setIsCheckingId(false);
+
+                if (error) {
+                    console.error('ID check error:', error);
+                    return;
+                }
+
+                if (exists) {
+                    setIdError('Contractor ID is already available.');
+                } else {
+                    setIdError('');
+                }
+            } else {
+                setIdError('');
+            }
+        };
+
+        const timeoutId = setTimeout(() => {
+            if (generatedId) checkId();
+        }, 500);
+
+        return () => clearTimeout(timeoutId);
+    }, [generatedId]);
+
     const handleSubmit = async (e) => {
         e.preventDefault();
 
@@ -284,12 +316,18 @@ const AddContractors = () => {
             toast.error('Please enter a valid phone number');
             return;
         }
+        let hasError = false;
         if (phoneError) {
             toast.error(phoneError);
-            return;
+            hasError = true;
         }
-        if (isCheckingPhone) {
-            toast.error('Verifying phone number...');
+        if (idError) {
+            toast.error(idError);
+            hasError = true;
+        }
+        if (hasError) return;
+        if (isCheckingPhone || isCheckingId) {
+            toast.error('Verifying details...');
             return;
         }
         if (!selectedState || !selectedCity) {
@@ -300,10 +338,7 @@ const AddContractors = () => {
             toast.error('Please assign to a user');
             return;
         }
-        if ((customerType === 'Contractor' || customerType === 'Mistry') && !nickname) {
-            toast.error('Please enter a nickname');
-            return;
-        }
+
         if (customerType === 'Mistry' && !mistryName) {
             toast.error('Please enter a mistry name');
             return;
@@ -312,6 +347,21 @@ const AddContractors = () => {
         setLoading(true);
 
         try {
+            // Check Name Uniqueness (Case Sensitive)
+            const { exists: nameExists } = await addContractorService.checkContractorNameUnique(contractorName);
+            if (nameExists) {
+                toast.error('This Contractor Name already exists.');
+                setLoading(false);
+                return;
+            }
+
+            const { exists } = await addContractorService.checkIdUnique(generatedId);
+            if (exists) {
+                toast.error('Contractor ID is already available');
+                setLoading(false);
+                return;
+            }
+
             const contractorPayload = {
                 contractor_id: generatedId,
                 contractor_name: contractorName,
@@ -383,16 +433,29 @@ const AddContractors = () => {
                     <form onSubmit={handleSubmit} className="max-w-5xl mx-auto p-6 md:p-10 pb-32">
 
                         {/* Generated ID Badge */}
-                        <div className="mb-8 p-4 rounded-2xl bg-muted/30 border border-border flex items-center justify-between gap-4">
+                        <div className={`mb-8 p-4 rounded-2xl border flex items-center justify-between gap-4 transition-colors ${idError
+                            ? 'bg-destructive/5 border-destructive'
+                            : 'bg-muted/30 border-border'
+                            }`}>
                             <div className="flex items-center gap-3">
-                                <div className="p-2 bg-primary/10 rounded-lg text-primary">
-                                    <User size={20} />
+                                <div className={`p-2 rounded-lg ${idError ? 'bg-destructive/10 text-destructive' : 'bg-primary/10 text-primary'
+                                    }`}>
+                                    {isCheckingId ? <Loader2 size={20} className="animate-spin" /> : <User size={20} />}
                                 </div>
                                 <div>
-                                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">New Contractor ID</p>
-                                    <p className="text-lg font-semibold text-foreground tracking-tight">
+                                    <p className={`text-xs font-medium uppercase tracking-wider ${idError ? 'text-destructive' : 'text-muted-foreground'
+                                        }`}>
+                                        {idError ? 'Unavailable ID' : 'New Contractor ID'}
+                                    </p>
+                                    <p className={`text-lg font-semibold tracking-tight ${idError ? 'text-destructive' : 'text-foreground'
+                                        }`}>
                                         {generatedId || 'Pending...'}
                                     </p>
+                                    {idError && (
+                                        <p className="text-xs text-destructive font-medium mt-1">
+                                            {idError}
+                                        </p>
+                                    )}
                                 </div>
                             </div>
                             <div className="hidden sm:block text-xs text-muted-foreground text-right">
@@ -450,7 +513,7 @@ const AddContractors = () => {
                         {/* Additional Info (Conditional) */}
                         {(['Contractor', 'Mistry'].includes(customerType)) && (
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6 mb-4">
-                                <InputGroup label="Nickname" required>
+                                <InputGroup label="Nickname">
                                     <TextInput
                                         type="text"
                                         value={nickname}
