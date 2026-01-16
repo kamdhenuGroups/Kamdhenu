@@ -566,13 +566,11 @@ export const idGenerator = {
 
         // Use original case for Contractor Name, uppercase others for consistency
         let normContractorName = contractorName;
-        const normNickname = nickname ? nickname.toUpperCase() : '';
+        const normNickname = nickname ? nickname : '';
         const normMistryName = mistryName ? mistryName.toUpperCase() : '';
 
         // Remove spaces for Contractor type
-        if (customerType === 'Contractor') {
-            normContractorName = normContractorName.replace(/\s+/g, '');
-        }
+
 
         const nameDisplay = ((customerType === 'Contractor' || customerType === 'Mistry') && normNickname)
             ? `${normContractorName}(${normNickname})`

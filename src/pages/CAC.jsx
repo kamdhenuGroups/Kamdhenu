@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { supabase } from '../supabase';
+import { getContractors, getCacEntries, createCacEntry } from '../services/cacService';
 import {
     ChevronDown,
     Search,
@@ -14,9 +14,11 @@ import {
     Save,
     Image as ImageIcon,
     X,
-    Filter
+    Filter,
+    MapPin
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
+import { CUSTOMER_TYPES } from '../services/orderService';
 
 // -- Reusable Components (Matching Project UI) --
 
@@ -111,8 +113,15 @@ const SearchableInput = ({ options = [], onSelect, onClear, ...props }) => {
     const filteredOptions = useMemo(() => {
         if (props.readOnly) return options;
         if (!props.value) return options;
+
+        const normalizedSearch = props.value.toLowerCase();
+
+        // Show all options if the current value matches an option exactly
+        const isExactMatch = options.some(opt => opt.toLowerCase() === normalizedSearch);
+        if (isExactMatch) return options;
+
         return options.filter(opt =>
-            opt.toLowerCase().includes(props.value.toLowerCase())
+            opt.toLowerCase().includes(normalizedSearch)
         );
     }, [options, props.value, props.readOnly]);
 
@@ -187,8 +196,13 @@ const SearchableInput = ({ options = [], onSelect, onClear, ...props }) => {
 };
 
 const EXPENSE_CATEGORIES = [
-    'CAC (On-Boarding)',
-    'Maintenance Expense'
+    'Food',
+    'Drinks',
+    'Gifts',
+    'Games/Recreational',
+    'Mistri Delight',
+    'Site Supervisor Delight',
+    'Others (Please Specify)'
 ];
 
 const CAC = () => {
@@ -202,11 +216,15 @@ const CAC = () => {
     const [cacEntries, setCacEntries] = useState([]);
 
     // Form State
+    const [selectedContractorType, setSelectedContractorType] = useState('All');
     const [selectedContractorId, setSelectedContractorId] = useState('');
     const [amount, setAmount] = useState('');
     const [expenseCategory, setExpenseCategory] = useState('');
+    const [otherCategory, setOtherCategory] = useState('');
     const [billImages, setBillImages] = useState([]);
+
     const [date, setDate] = useState('');
+    const [location, setLocation] = useState('');
 
     // Dropdown State
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -253,34 +271,8 @@ const CAC = () => {
         }
 
         try {
-            let query = supabase.from('contractor_data').select('*');
-
-            // If NOT admin, filter by access
-            const isAdmin = (currentUser.role && currentUser.role.toLowerCase() === 'admin') || currentUser.Admin === 'Yes';
-
-            if (!isAdmin) {
-                const { data: accessData, error: accessError } = await supabase
-                    .from('user_contractor_access')
-                    .select('contractor_id')
-                    .eq('user_id', currentUser.user_id)
-                    .eq('can_view', true);
-
-                if (accessError) throw accessError;
-
-                const allowedIds = accessData.map(item => item.contractor_id);
-
-                if (allowedIds.length === 0) {
-                    setContractors([]);
-                    setLoading(false);
-                    return;
-                }
-
-                query = query.in('contractor_id', allowedIds);
-            }
-
-            const { data, error } = await query;
-            if (error) throw error;
-            setContractors(data || []);
+            const data = await getContractors(currentUser);
+            setContractors(data);
         } catch (error) {
             console.error('Error fetching contractors:', error);
             toast.error('Failed to fetch contractors');
@@ -292,29 +284,8 @@ const CAC = () => {
     const fetchCacEntries = async () => {
         setStatusLoading(true);
         try {
-            let query = supabase
-                .from('cac')
-                .select(`
-                    *,
-                    users (full_name, username, user_id),
-                    contractor_data (contractor_name, customer_type),
-                    cac_bills (*)
-                `)
-                .order('created_at', { ascending: false });
-
-            // If NOT admin, filter by user_id
-            if (user) {
-                const isAdmin = (user.role && user.role.toLowerCase() === 'admin') || user.Admin === 'Yes';
-
-                if (!isAdmin) {
-                    query = query.eq('user_id', user.user_id);
-                }
-            }
-
-            const { data, error } = await query;
-
-            if (error) throw error;
-            setCacEntries(data || []);
+            const data = await getCacEntries(user);
+            setCacEntries(data);
         } catch (error) {
             console.error('Error fetching CAC entries:', error);
             toast.error('Failed to fetch CAC records');
@@ -324,12 +295,21 @@ const CAC = () => {
     };
 
     // Filter Logic for Dropdown
+    const availableContractorTypes = useMemo(() => {
+        const types = new Set(contractors.map(c => c.customer_type).filter(Boolean));
+        return Array.from(types).sort();
+    }, [contractors]);
+
     const filteredContractors = useMemo(() => {
-        return contractors.filter(c =>
-            c.contractor_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            c.contractor_id?.toLowerCase().includes(searchTerm.toLowerCase())
-        );
-    }, [contractors, searchTerm]);
+        return contractors.filter(c => {
+            const matchesSearch = c.contractor_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                c.contractor_id?.toLowerCase().includes(searchTerm.toLowerCase());
+
+            const matchesType = !selectedContractorType || selectedContractorType === 'All' || c.customer_type === selectedContractorType;
+
+            return matchesSearch && matchesType;
+        });
+    }, [contractors, searchTerm, selectedContractorType]);
 
     const selectedContractor = useMemo(() => {
         return contractors.find(c => c.contractor_id === selectedContractorId);
@@ -342,12 +322,14 @@ const CAC = () => {
             const contractorName = entry.contractor_data?.contractor_name || '';
             const contractorId = entry.contractor_id || '';
             const expenseCat = entry.expense_category || '';
+            const otherCat = entry.other_expense_category || '';
             const creatorName = entry.users?.full_name || '';
 
             return (
                 contractorName.toLowerCase().includes(lowerTerm) ||
                 contractorId.toLowerCase().includes(lowerTerm) ||
                 expenseCat.toLowerCase().includes(lowerTerm) ||
+                otherCat.toLowerCase().includes(lowerTerm) ||
                 creatorName.toLowerCase().includes(lowerTerm)
             );
         });
@@ -358,8 +340,13 @@ const CAC = () => {
         e.preventDefault();
 
         // Validation
-        if (!selectedContractorId || !amount || !date || !remarks || !expenseCategory) {
+        if (!selectedContractorId || !amount || !date || !remarks || !expenseCategory || !location) {
             toast.error('Please fill in all required fields');
+            return;
+        }
+
+        if (expenseCategory === 'Others (Please Specify)' && !otherCategory) {
+            toast.error('Please specify other category details');
             return;
         }
 
@@ -382,62 +369,28 @@ const CAC = () => {
                 amount: parseFloat(amount),
 
                 expense_category: expenseCategory,
+                other_expense_category: expenseCategory === 'Others (Please Specify)' ? otherCategory : null,
                 expense_date: date,
                 remarks: remarks,
+                location: location,
             };
 
-            const { data: cacData, error: cacError } = await supabase
-                .from('cac')
-                .insert([cacPayload])
-                .select()
-                .single();
-
-            if (cacError) throw cacError;
-
-            const cacId = cacData.id;
-
-            // 2. Upload Images and Insert into cac_bills
-            const uploadPromises = billImages.map(async (file) => {
-                const fileExt = file.name.split('.').pop();
-                const fileName = `cac-bills/${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
-
-                // Upload to Storage
-                const { error: uploadError } = await supabase.storage
-                    .from('images') // Using 'images' bucket as seen in MyProfile.jsx
-                    .upload(fileName, file);
-
-                if (uploadError) throw uploadError;
-
-                // Get Public URL
-                const { data: urlData } = supabase.storage
-                    .from('images')
-                    .getPublicUrl(fileName);
-
-                const publicUrl = urlData.publicUrl;
-
-                // Insert into cac_bills
-                return supabase.from('cac_bills').insert([{
-                    cac_id: cacId,
-                    bill_url: publicUrl,
-                    file_name: file.name,
-                    file_type: file.type,
-                    uploaded_by: user.user_id
-                }]);
-            });
-
-            await Promise.all(uploadPromises);
+            await createCacEntry(cacPayload, billImages, user);
 
             toast.success('CAC entry added successfully!');
 
             // Reset form
             setAmount('');
             setExpenseCategory('');
+            setOtherCategory('');
             setBillImages([]);
             setSelectedContractorId('');
             setDate('');
             setRemarks('');
+            setLocation('');
             setSearchTerm('');
             setIsDropdownOpen(false);
+            setSelectedContractorType('All');
 
         } catch (error) {
             console.error('Error saving CAC:', error);
@@ -489,109 +442,137 @@ const CAC = () => {
                             <SectionHeader title="Influencer Details" icon={User} />
 
                             <div className="mb-8 relative" ref={dropdownRef}>
-                                <InputGroup label="Select Influencer" required>
-                                    <div
-                                        onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                                        className={`w-full rounded-xl border p-3 cursor-pointer flex justify-between items-center transition-all bg-background/50 ${isDropdownOpen ? 'border-ring ring-2 ring-ring/20' : 'border-input hover:border-ring/50 hover:bg-background'
-                                            }`}
-                                    >
-                                        {selectedContractor ? (
-                                            <div className="flex flex-col text-left min-w-0 flex-1 mr-2">
-                                                <span className="font-semibold text-foreground text-base tracking-tight break-words whitespace-normal">{selectedContractor.contractor_name}</span>
-                                            </div>
-                                        ) : (
-                                            <span className="text-muted-foreground">-- Select an Influencer --</span>
-                                        )}
-                                        <div className="flex items-center gap-2 shrink-0">
-                                            {selectedContractorId && (
-                                                <button
-                                                    type="button"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setSelectedContractorId('');
-                                                    }}
-                                                    className="p-1 hover:bg-muted rounded-full text-muted-foreground hover:text-foreground transition-colors mr-1"
-                                                >
-                                                    <X className="w-4 h-4" />
-                                                </button>
-                                            )}
-                                            <ChevronDown className={`w-5 h-5 text-muted-foreground transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-4">
+                                    <InputGroup label="Influencer Type">
+                                        <div className="relative">
+                                            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground z-10" />
+                                            <SearchableInput
+                                                value={selectedContractorType === 'All' ? '' : selectedContractorType}
+                                                onChange={(e) => {
+                                                    setSelectedContractorType(e.target.value);
+                                                    setSelectedContractorId(''); // Reset selection when type changes
+                                                }}
+                                                onSelect={(val) => {
+                                                    setSelectedContractorType(val);
+                                                    setSelectedContractorId('');
+                                                }}
+                                                onClear={() => {
+                                                    setSelectedContractorType('All');
+                                                    setSelectedContractorId('');
+                                                }}
+                                                options={['All', ...availableContractorTypes]}
+                                                className="pl-9"
+                                                placeholder="All Types"
+                                            />
                                         </div>
-                                    </div>
-                                </InputGroup>
+                                    </InputGroup>
 
-                                {/* Dropdown Menu */}
-                                {isDropdownOpen && (
-                                    <div className="absolute z-20 w-full mt-2 bg-popover rounded-xl shadow-xl border border-border overflow-hidden max-h-96 flex flex-col animate-in fade-in zoom-in-95 duration-200">
-                                        <div className="p-3 border-b border-border bg-muted/20 sticky top-0">
-                                            <div className="relative">
-                                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                                                <input
-                                                    type="text"
-                                                    value={searchTerm}
-                                                    onChange={(e) => setSearchTerm(e.target.value)}
-                                                    placeholder="Search by name or ID..."
-                                                    className="w-full pl-9 pr-4 py-2 rounded-lg border border-input bg-background text-sm focus:border-ring focus:ring-2 focus:ring-ring/20 outline-none"
-                                                    autoFocus
-                                                />
-                                            </div>
-                                        </div>
-                                        <div className="overflow-y-auto flex-1">
-                                            {filteredContractors.length > 0 ? (
-                                                filteredContractors.map((contractor) => (
-                                                    <div
-                                                        key={contractor.contractor_id}
-                                                        onClick={() => {
-                                                            setSelectedContractorId(contractor.contractor_id);
-                                                            setIsDropdownOpen(false);
-                                                            setSearchTerm('');
-                                                        }}
-                                                        className={`p-3 p-4 hover:bg-muted/50 cursor-pointer border-b border-border/50 last:border-0 transition-colors flex justify-between items-center group ${selectedContractorId === contractor.contractor_id ? 'bg-muted/50' : ''}`}
-                                                    >
-                                                        <div>
-                                                            <div className="font-medium text-foreground group-hover:text-primary transition-colors">
-                                                                {contractor.contractor_name}
-                                                                {contractor.nickname && <span className="text-muted-foreground/70 font-normal ml-2 text-sm">({contractor.nickname})</span>}
-                                                            </div>
-                                                            <div className="flex items-center gap-2 mt-1">
-                                                                <span className="text-xs bg-muted text-muted-foreground px-1.5 py-0.5 rounded border border-border">
-                                                                    {contractor.contractor_id}
-                                                                </span>
-                                                                <span className="text-[10px] uppercase font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded">
-                                                                    {contractor.customer_type}
-                                                                </span>
-                                                            </div>
-                                                        </div>
-                                                        {selectedContractorId === contractor.contractor_id && <Check className="w-5 h-5 text-primary" />}
+                                    <div className="md:col-span-2 relative">
+                                        <InputGroup label="Select Influencer" required>
+                                            <div
+                                                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                                                className={`w-full rounded-xl border p-3 cursor-pointer flex justify-between items-center transition-all bg-background/50 ${isDropdownOpen ? 'border-ring ring-2 ring-ring/20' : 'border-input hover:border-ring/50 hover:bg-background'
+                                                    }`}
+                                            >
+                                                {selectedContractor ? (
+                                                    <div className="flex flex-col text-left min-w-0 flex-1 mr-2">
+                                                        <span className="font-semibold text-foreground text-base tracking-tight break-words whitespace-normal">{selectedContractor.contractor_name}</span>
                                                     </div>
-                                                ))
-                                            ) : (
-                                                <div className="p-8 text-center text-muted-foreground">
-                                                    <p>No influencers found.</p>
+                                                ) : (
+                                                    <span className="text-muted-foreground">-- Select an Influencer --</span>
+                                                )}
+                                                <div className="flex items-center gap-2 shrink-0">
+                                                    {selectedContractorId && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setSelectedContractorId('');
+                                                            }}
+                                                            className="p-1 hover:bg-muted rounded-full text-muted-foreground hover:text-foreground transition-colors mr-1"
+                                                        >
+                                                            <X className="w-4 h-4" />
+                                                        </button>
+                                                    )}
+                                                    <ChevronDown className={`w-5 h-5 text-muted-foreground transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
                                                 </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                )}
+                                            </div>
+                                        </InputGroup>
 
-                                {/* Influencer Summary Card (Visible when selected) */}
-                                {selectedContractor && (
-                                    <div className="mt-4 bg-muted/20 rounded-xl p-4 sm:p-5 border border-border/50 flex flex-wrap gap-4 sm:gap-6 animate-in fade-in slide-in-from-top-2">
-                                        <div className="shrink-0 max-w-full">
-                                            <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold mb-1">Influencer ID</p>
-                                            <p className="text-sm text-foreground bg-background px-3 py-1.5 rounded-md border border-border inline-block max-w-full break-all">
-                                                {selectedContractor.contractor_id}
-                                            </p>
-                                        </div>
-                                        <div className="flex-1 min-w-[200px] sm:min-w-[240px]">
-                                            <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold mb-1">Influencer Name</p>
-                                            <p className="text-lg sm:text-2xl font-light text-foreground break-words whitespace-normal leading-tight">
-                                                {selectedContractor.contractor_name}
-                                                {selectedContractor.nickname && <span className="text-muted-foreground text-sm sm:text-lg ml-2">({selectedContractor.nickname})</span>}
-                                            </p>
-                                        </div>
+                                        {/* Dropdown Menu */}
+                                        {isDropdownOpen && (
+                                            <div className="absolute z-20 w-full mt-2 bg-popover rounded-xl shadow-xl border border-border overflow-hidden max-h-96 flex flex-col animate-in fade-in zoom-in-95 duration-200">
+                                                <div className="p-3 border-b border-border bg-muted/20 sticky top-0">
+                                                    <div className="relative">
+                                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                                                        <input
+                                                            type="text"
+                                                            value={searchTerm}
+                                                            onChange={(e) => setSearchTerm(e.target.value)}
+                                                            placeholder="Search by name or ID..."
+                                                            className="w-full pl-9 pr-4 py-2 rounded-lg border border-input bg-background text-sm focus:border-ring focus:ring-2 focus:ring-ring/20 outline-none"
+                                                            autoFocus
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <div className="overflow-y-auto flex-1">
+                                                    {filteredContractors.length > 0 ? (
+                                                        filteredContractors.map((contractor) => (
+                                                            <div
+                                                                key={contractor.contractor_id}
+                                                                onClick={() => {
+                                                                    setSelectedContractorId(contractor.contractor_id);
+                                                                    setIsDropdownOpen(false);
+                                                                    setSearchTerm('');
+                                                                }}
+                                                                className={`p-3 p-4 hover:bg-muted/50 cursor-pointer border-b border-border/50 last:border-0 transition-colors flex justify-between items-center group ${selectedContractorId === contractor.contractor_id ? 'bg-muted/50' : ''}`}
+                                                            >
+                                                                <div>
+                                                                    <div className="font-medium text-foreground group-hover:text-primary transition-colors">
+                                                                        {contractor.contractor_name}
+                                                                        {contractor.nickname && <span className="text-muted-foreground/70 font-normal ml-2 text-sm">({contractor.nickname})</span>}
+                                                                    </div>
+                                                                    <div className="flex items-center gap-2 mt-1">
+                                                                        <span className="text-xs bg-muted text-muted-foreground px-1.5 py-0.5 rounded border border-border">
+                                                                            {contractor.contractor_id}
+                                                                        </span>
+                                                                        <span className="text-[10px] uppercase font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded">
+                                                                            {contractor.customer_type}
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+                                                                {selectedContractorId === contractor.contractor_id && <Check className="w-5 h-5 text-primary" />}
+                                                            </div>
+                                                        ))
+                                                    ) : (
+                                                        <div className="p-8 text-center text-muted-foreground">
+                                                            <p>No influencers found.</p>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Influencer Summary Card (Visible when selected) */}
+                                        {selectedContractor && (
+                                            <div className="mt-4 bg-muted/20 rounded-xl p-4 sm:p-5 border border-border/50 flex flex-wrap gap-4 sm:gap-6 animate-in fade-in slide-in-from-top-2">
+                                                <div className="shrink-0 max-w-full">
+                                                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold mb-1">Influencer ID</p>
+                                                    <p className="text-sm text-foreground bg-background px-3 py-1.5 rounded-md border border-border inline-block max-w-full break-all">
+                                                        {selectedContractor.contractor_id}
+                                                    </p>
+                                                </div>
+                                                <div className="flex-1 min-w-[200px] sm:min-w-[240px]">
+                                                    <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold mb-1">Influencer Name</p>
+                                                    <p className="text-lg sm:text-2xl font-light text-foreground break-words whitespace-normal leading-tight">
+                                                        {selectedContractor.contractor_name}
+                                                        {selectedContractor.nickname && <span className="text-muted-foreground text-sm sm:text-lg ml-2">({selectedContractor.nickname})</span>}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
-                                )}
+                                </div>
                             </div>
 
                             {/* Section 2: Transaction Details */}
@@ -677,7 +658,30 @@ const CAC = () => {
                                     </div>
                                 </InputGroup>
 
+                                {expenseCategory === 'Others (Please Specify)' && (
+                                    <InputGroup label="Other Details" required>
+                                        <TextInput
+                                            value={otherCategory}
+                                            onChange={(e) => setOtherCategory(e.target.value)}
+                                            placeholder="Specify details..."
+                                        />
+                                    </InputGroup>
+                                )}
 
+
+
+                                <InputGroup label="Location" required>
+                                    <div className="relative">
+                                        <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground z-10" />
+                                        <TextInput
+                                            type="text"
+                                            value={location}
+                                            onChange={(e) => setLocation(e.target.value)}
+                                            className="pl-9"
+                                            placeholder="Ex: Hotel Landmark, Chaigovindam etc"
+                                        />
+                                    </div>
+                                </InputGroup>
                             </div>
 
                             <div className="mb-6">
@@ -761,10 +765,12 @@ const CAC = () => {
                                     onClick={() => {
                                         setAmount('');
                                         setExpenseCategory('');
+                                        setOtherCategory('');
                                         setBillImages([]);
                                         setSelectedContractorId('');
                                         setDate('');
                                         setRemarks('');
+                                        setLocation('');
                                         setSearchTerm('');
                                         setIsDropdownOpen(false);
                                     }}
@@ -825,8 +831,10 @@ const CAC = () => {
                                                     <th className="px-4 py-3 whitespace-nowrap">Created By</th>
                                                     <th className="px-4 py-3 whitespace-nowrap">Influencer ID</th>
                                                     <th className="px-4 py-3 whitespace-nowrap">Influencer Name</th>
+                                                    <th className="px-4 py-3 whitespace-nowrap">Location</th>
                                                     <th className="px-4 py-3 whitespace-nowrap">Amount (₹)</th>
                                                     <th className="px-4 py-3 whitespace-nowrap">Exp. Category</th>
+                                                    <th className="px-4 py-3 whitespace-nowrap">Other Details</th>
                                                     <th className="px-4 py-3 whitespace-nowrap">Remarks</th>
 
                                                     <th className="px-4 py-3 whitespace-nowrap">Reimbursement Status</th>
@@ -854,15 +862,21 @@ const CAC = () => {
                                                         <td className="px-4 py-3 text-xs whitespace-nowrap max-w-[200px] truncate" title={entry.contractor_data?.contractor_name}>
                                                             {entry.contractor_data?.contractor_name || 'Unknown'}
                                                         </td>
+                                                        <td className="px-4 py-3 text-xs whitespace-normal break-words" title={entry.location}>
+                                                            {entry.location || '-'}
+                                                        </td>
                                                         <td className="px-4 py-3 text-xs whitespace-nowrap font-medium text-foreground">
                                                             ₹{entry.amount.toLocaleString('en-IN')}
                                                         </td>
                                                         <td className="px-4 py-3 text-xs whitespace-nowrap">
                                                             {entry.expense_category ? (
                                                                 <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-100">
-                                                                    {entry.expense_category}
+                                                                    {entry.expense_category === 'Others (Please Specify)' ? 'Others' : entry.expense_category}
                                                                 </span>
                                                             ) : '-'}
+                                                        </td>
+                                                        <td className="px-4 py-3 text-xs whitespace-nowrap max-w-[150px] truncate" title={entry.other_expense_category}>
+                                                            {entry.other_expense_category || '-'}
                                                         </td>
                                                         <td className="px-4 py-3 text-xs whitespace-nowrap max-w-[200px] truncate" title={entry.remarks}>
                                                             {entry.remarks || '-'}
@@ -942,12 +956,24 @@ const CAC = () => {
                                                         <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-bold mb-0.5">Category</p>
                                                         {entry.expense_category ? (
                                                             <span className="inline-block bg-blue-50/50 text-blue-700 text-xs px-2 py-0.5 rounded border border-blue-100/50">
-                                                                {entry.expense_category}
+                                                                {entry.expense_category === 'Others (Please Specify)' ? 'Others' : entry.expense_category}
                                                             </span>
                                                         ) : (
                                                             <span className="text-muted-foreground text-xs">-</span>
                                                         )}
                                                     </div>
+
+                                                    <div className="col-span-2 sm:col-span-1">
+                                                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-bold mb-0.5">Location</p>
+                                                        <p className="text-foreground text-xs font-medium break-words whitespace-normal">{entry.location || '-'}</p>
+                                                    </div>
+
+                                                    {entry.other_expense_category && (
+                                                        <div className="col-span-2 sm:col-span-1">
+                                                            <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-bold mb-0.5">Other Details</p>
+                                                            <p className="text-foreground text-xs font-medium">{entry.other_expense_category}</p>
+                                                        </div>
+                                                    )}
 
                                                     <div className="col-span-2 sm:col-span-1">
                                                         <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-bold mb-0.5">Reimbursement Status</p>

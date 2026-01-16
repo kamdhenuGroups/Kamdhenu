@@ -10,6 +10,8 @@ CREATE TABLE public.cac (
   reimbursement_status text NOT NULL DEFAULT 'Pending'::text CHECK (reimbursement_status = ANY (ARRAY['Pending'::text, 'Partial'::text, 'Reimbursed'::text])),
 
   expense_category text,
+  other_expense_category text,
+  location text,
 
   expense_date date NOT NULL,
   last_reimbursed_at timestamp with time zone,
