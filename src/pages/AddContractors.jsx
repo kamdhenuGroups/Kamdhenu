@@ -101,13 +101,14 @@ const SearchableInput = ({ options = [], onSelect, ...props }) => {
     }, [isOpen]);
 
     const filteredOptions = useMemo(() => {
+        if (props.readOnly) return options;
         if (!props.value) return options;
         const normalizedSearch = props.value.toLowerCase();
         return options.filter(opt => {
             const label = typeof opt === 'string' ? opt : opt.label;
             return label.toLowerCase().includes(normalizedSearch);
         });
-    }, [options, props.value]);
+    }, [options, props.value, props.readOnly]);
 
     const dropdown = isOpen && filteredOptions.length > 0 ? (
         <div
@@ -159,14 +160,20 @@ const SearchableInput = ({ options = [], onSelect, ...props }) => {
         <div className="relative" ref={wrapperRef}>
             <TextInput
                 {...props}
-                className={`${props.className || ''} pr-10`}
-                onFocus={() => {
-                    setIsOpen(true);
+                className={`${props.className || ''} pr-10 ${props.readOnly ? 'cursor-pointer' : ''}`}
+                onFocus={(e) => {
+                    if (!props.readOnly) setIsOpen(true);
                     updatePosition();
+                    props.onFocus && props.onFocus(e);
+                }}
+                onClick={(e) => {
+                    if (props.readOnly) setIsOpen((prev) => !prev);
+                    else setIsOpen(true);
+                    props.onClick && props.onClick(e);
                 }}
                 onChange={(e) => {
                     props.onChange(e);
-                    setIsOpen(true);
+                    if (!props.readOnly) setIsOpen(true);
                 }}
                 autoComplete="off"
             />
@@ -609,6 +616,7 @@ const AddContractors = () => {
                                     options={states}
                                     placeholder="Select State"
                                     required
+                                    readOnly
                                 />
                             </InputGroup>
 
@@ -622,6 +630,7 @@ const AddContractors = () => {
                                     placeholder="Select City"
                                     required
                                     disabled={!selectedState}
+                                    readOnly
                                 />
                             </InputGroup>
                         </div>

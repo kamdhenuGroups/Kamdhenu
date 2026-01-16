@@ -58,7 +58,7 @@ const SelectInput = ({ className = "", children, ...props }) => (
     </div>
 );
 
-const SearchableInput = ({ options = [], onSelect, ...props }) => {
+const SearchableInput = ({ options = [], onSelect, onClear, ...props }) => {
     const [isOpen, setIsOpen] = useState(false);
     const wrapperRef = useRef(null);
     const dropdownRef = useRef(null);
@@ -109,11 +109,12 @@ const SearchableInput = ({ options = [], onSelect, ...props }) => {
     }, [isOpen]);
 
     const filteredOptions = useMemo(() => {
+        if (props.readOnly) return options;
         if (!props.value) return options;
         return options.filter(opt =>
             opt.toLowerCase().includes(props.value.toLowerCase())
         );
-    }, [options, props.value]);
+    }, [options, props.value, props.readOnly]);
 
     const dropdown = isOpen && (
         <div
@@ -154,7 +155,7 @@ const SearchableInput = ({ options = [], onSelect, ...props }) => {
         <div className="relative" ref={wrapperRef}>
             <TextInput
                 {...props}
-                className={`${props.className || ''} pr-10`}
+                className={`${props.className || ''} ${props.value && onClear ? 'pr-14' : 'pr-10'}`}
                 onFocus={() => {
                     setIsOpen(true);
                     updatePosition();
@@ -165,6 +166,18 @@ const SearchableInput = ({ options = [], onSelect, ...props }) => {
                 }}
                 autoComplete="off"
             />
+            {props.value && onClear && (
+                <button
+                    type="button"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onClear();
+                    }}
+                    className="absolute right-8 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground cursor-pointer z-10 p-0.5 rounded-full hover:bg-muted transition-colors"
+                >
+                    <X className="w-3.5 h-3.5" />
+                </button>
+            )}
             <div className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none">
                 <ChevronDown className="w-4 h-4" />
             </div>
@@ -345,7 +358,7 @@ const CAC = () => {
         e.preventDefault();
 
         // Validation
-        if (!selectedContractorId || !amount || !date || !remarks) {
+        if (!selectedContractorId || !amount || !date || !remarks || !expenseCategory) {
             toast.error('Please fill in all required fields');
             return;
         }
@@ -439,7 +452,7 @@ const CAC = () => {
             {/* Header Area */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 shrink-0">
                 <div className="flex flex-col gap-2">
-                    <h1 className="text-3xl font-light text-foreground tracking-tight">Customer Acquisition Cost</h1>
+                    <h1 className="text-2xl sm:text-3xl font-light text-foreground tracking-tight">Customer Acquisition Cost</h1>
                     <p className="text-muted-foreground text-sm">Manage and track CAC expenses.</p>
                 </div>
 
@@ -447,7 +460,7 @@ const CAC = () => {
                 <div className="flex p-1 bg-muted/50 backdrop-blur rounded-full self-start sm:self-auto border border-border">
                     <button
                         onClick={() => setActiveTab('entry')}
-                        className={`flex items-center gap-2 px-6 py-2 text-sm font-medium rounded-full transition-all duration-300 ${activeTab === 'entry'
+                        className={`flex items-center gap-2 px-4 sm:px-6 py-2 text-sm font-medium rounded-full transition-all duration-300 ${activeTab === 'entry'
                             ? 'bg-primary text-primary-foreground shadow-md'
                             : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
                             }`}
@@ -456,7 +469,7 @@ const CAC = () => {
                     </button>
                     <button
                         onClick={() => setActiveTab('status')}
-                        className={`flex items-center gap-2 px-6 py-2 text-sm font-medium rounded-full transition-all duration-300 ${activeTab === 'status'
+                        className={`flex items-center gap-2 px-4 sm:px-6 py-2 text-sm font-medium rounded-full transition-all duration-300 ${activeTab === 'status'
                             ? 'bg-primary text-primary-foreground shadow-md'
                             : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
                             }`}
@@ -470,7 +483,7 @@ const CAC = () => {
 
                 {activeTab === 'entry' ? (
                     <div className="flex-1 overflow-auto custom-scrollbar">
-                        <form onSubmit={handleSubmit} className="max-w-4xl mx-auto p-6 md:p-10 pb-32">
+                        <form onSubmit={handleSubmit} className="max-w-4xl mx-auto p-4 sm:p-6 md:p-10 pb-32">
 
                             {/* Section 1: Influencer Details */}
                             <SectionHeader title="Influencer Details" icon={User} />
@@ -483,18 +496,27 @@ const CAC = () => {
                                             }`}
                                     >
                                         {selectedContractor ? (
-                                            <div className="flex flex-col text-left">
-                                                <span className="font-semibold text-foreground text-base tracking-tight">{selectedContractor.contractor_name}</span>
-                                                <div className="flex items-center gap-2 text-xs mt-0.5">
-                                                    <span className="text-muted-foreground">{selectedContractor.contractor_id}</span>
-                                                    <span className="w-1 h-1 rounded-full bg-muted-foreground/30"></span>
-                                                    <span className="text-primary font-medium">{selectedContractor.customer_type}</span>
-                                                </div>
+                                            <div className="flex flex-col text-left min-w-0 flex-1 mr-2">
+                                                <span className="font-semibold text-foreground text-base tracking-tight break-words whitespace-normal">{selectedContractor.contractor_name}</span>
                                             </div>
                                         ) : (
                                             <span className="text-muted-foreground">-- Select an Influencer --</span>
                                         )}
-                                        <ChevronDown className={`w-5 h-5 text-muted-foreground transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            {selectedContractorId && (
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setSelectedContractorId('');
+                                                    }}
+                                                    className="p-1 hover:bg-muted rounded-full text-muted-foreground hover:text-foreground transition-colors mr-1"
+                                                >
+                                                    <X className="w-4 h-4" />
+                                                </button>
+                                            )}
+                                            <ChevronDown className={`w-5 h-5 text-muted-foreground transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
+                                        </div>
                                     </div>
                                 </InputGroup>
 
@@ -554,18 +576,18 @@ const CAC = () => {
 
                                 {/* Influencer Summary Card (Visible when selected) */}
                                 {selectedContractor && (
-                                    <div className="mt-4 bg-muted/20 rounded-xl p-5 border border-border/50 grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-6 animate-in fade-in slide-in-from-top-2">
-                                        <div>
+                                    <div className="mt-4 bg-muted/20 rounded-xl p-4 sm:p-5 border border-border/50 flex flex-wrap gap-4 sm:gap-6 animate-in fade-in slide-in-from-top-2">
+                                        <div className="shrink-0 max-w-full">
                                             <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold mb-1">Influencer ID</p>
-                                            <p className="text-sm text-foreground bg-background px-3 py-1.5 rounded-md border border-border inline-block whitespace-nowrap">
+                                            <p className="text-sm text-foreground bg-background px-3 py-1.5 rounded-md border border-border inline-block max-w-full break-all">
                                                 {selectedContractor.contractor_id}
                                             </p>
                                         </div>
-                                        <div className="min-w-0">
+                                        <div className="flex-1 min-w-[200px] sm:min-w-[240px]">
                                             <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold mb-1">Influencer Name</p>
-                                            <p className="text-2xl font-light text-foreground truncate">
+                                            <p className="text-lg sm:text-2xl font-light text-foreground break-words whitespace-normal leading-tight">
                                                 {selectedContractor.contractor_name}
-                                                {selectedContractor.nickname && <span className="text-muted-foreground text-lg ml-2">({selectedContractor.nickname})</span>}
+                                                {selectedContractor.nickname && <span className="text-muted-foreground text-sm sm:text-lg ml-2">({selectedContractor.nickname})</span>}
                                             </p>
                                         </div>
                                     </div>
@@ -602,6 +624,7 @@ const CAC = () => {
                                             ref={dateInputRef}
                                             type="date"
                                             value={date}
+                                            max={new Date().toLocaleDateString('en-CA')}
                                             onChange={(e) => setDate(e.target.value)}
                                             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10 pointer-events-none"
                                             required
@@ -633,7 +656,7 @@ const CAC = () => {
                                     </div>
                                 </InputGroup>
 
-                                <InputGroup label="Expense Category">
+                                <InputGroup label="Expense Category" required>
                                     <div className="relative">
                                         <Tag className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground z-10" />
                                         <SearchableInput
@@ -642,7 +665,8 @@ const CAC = () => {
                                             onSelect={(val) => setExpenseCategory(val)}
                                             options={EXPENSE_CATEGORIES}
                                             className="pl-9"
-                                            placeholder="Select or type category..."
+                                            placeholder="Select category..."
+                                            readOnly={true}
                                         />
                                     </div>
                                 </InputGroup>
@@ -658,9 +682,18 @@ const CAC = () => {
                                             type="text"
                                             value={remarks}
                                             onChange={(e) => setRemarks(e.target.value)}
-                                            className="pl-9"
+                                            className="pl-9 pr-10"
                                             placeholder="Enter any remarks..."
                                         />
+                                        {remarks && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setRemarks('')}
+                                                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-muted rounded-full text-muted-foreground hover:text-foreground transition-colors z-20"
+                                            >
+                                                <X className="w-3 h-3" />
+                                            </button>
+                                        )}
                                     </div>
                                 </InputGroup>
                             </div>
@@ -677,7 +710,6 @@ const CAC = () => {
                                         </div>
                                         <input
                                             type="file"
-                                            accept="image/*"
                                             multiple
                                             className="hidden"
                                             onChange={(e) => {
@@ -749,8 +781,8 @@ const CAC = () => {
                 ) : (
                     <div className="flex flex-col h-full bg-muted/10">
                         {/* Search Toolbar */}
-                        <div className="p-4 border-b border-border bg-card flex flex-wrap gap-3 items-center justify-between sticky top-0 z-20">
-                            <div className="relative flex-1 min-w-[280px] max-w-md group">
+                        <div className="p-4 border-b border-border bg-card flex gap-3 items-center justify-between sticky top-0 z-20">
+                            <div className="relative flex-1 sm:min-w-[280px] max-w-md group">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
                                 <input
                                     type="text"
@@ -777,96 +809,212 @@ const CAC = () => {
                                     <p className="text-sm">Loading CAC records...</p>
                                 </div>
                             ) : enrichedCacEntries.length > 0 ? (
-                                <table className="w-full text-left border-collapse">
-                                    <thead className="bg-muted/30 sticky top-0 z-10 backdrop-blur-sm">
-                                        <tr className="text-muted-foreground text-[10px] uppercase tracking-wider font-bold border-b border-border">
-                                            <th className="px-4 py-3 whitespace-nowrap">Date</th>
-                                            <th className="px-4 py-3 whitespace-nowrap">Created By</th>
-                                            <th className="px-4 py-3 whitespace-nowrap">Influencer ID</th>
-                                            <th className="px-4 py-3 whitespace-nowrap">Influencer Name</th>
-                                            <th className="px-4 py-3 whitespace-nowrap">Amount (₹)</th>
-                                            <th className="px-4 py-3 whitespace-nowrap">Exp. Category</th>
-                                            <th className="px-4 py-3 whitespace-nowrap">Remarks</th>
+                                <>
+                                    {/* Desktop Table */}
+                                    <div className="hidden md:block">
+                                        <table className="w-full text-left border-collapse">
+                                            <thead className="bg-muted/30 sticky top-0 z-10 backdrop-blur-sm">
+                                                <tr className="text-muted-foreground text-[10px] uppercase tracking-wider font-bold border-b border-border">
+                                                    <th className="px-4 py-3 whitespace-nowrap">Date</th>
+                                                    <th className="px-4 py-3 whitespace-nowrap">Created By</th>
+                                                    <th className="px-4 py-3 whitespace-nowrap">Influencer ID</th>
+                                                    <th className="px-4 py-3 whitespace-nowrap">Influencer Name</th>
+                                                    <th className="px-4 py-3 whitespace-nowrap">Amount (₹)</th>
+                                                    <th className="px-4 py-3 whitespace-nowrap">Exp. Category</th>
+                                                    <th className="px-4 py-3 whitespace-nowrap">Remarks</th>
 
-                                            <th className="px-4 py-3 whitespace-nowrap">Reimbursement Status</th>
-                                            <th className="px-4 py-3 whitespace-nowrap">Reimbursed Amt.</th>
-                                            <th className="px-4 py-3 whitespace-nowrap">Attachment</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-border/40 bg-card">
+                                                    <th className="px-4 py-3 whitespace-nowrap">Reimbursement Status</th>
+                                                    <th className="px-4 py-3 whitespace-nowrap">Reimbursed Amt.</th>
+                                                    <th className="px-4 py-3 whitespace-nowrap">Attachment</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-border/40 bg-card">
+                                                {enrichedCacEntries.map((entry) => (
+                                                    <tr key={entry.id || entry.created_at} className="hover:bg-muted/30 transition-colors">
+                                                        <td className="px-4 py-3 text-xs whitespace-nowrap text-muted-foreground">
+                                                            {new Date(entry.expense_date).toLocaleDateString('en-GB')}
+                                                        </td>
+                                                        <td className="px-4 py-3 text-xs whitespace-nowrap">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="font-medium text-foreground">{entry.users?.full_name || '-'}</span>
+                                                                <span className="bg-muted text-muted-foreground px-1.5 py-0.5 rounded border border-border">
+                                                                    {entry.user_id}
+                                                                </span>
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-4 py-3 text-xs whitespace-nowrap font-medium text-foreground">
+                                                            {entry.contractor_id}
+                                                        </td>
+                                                        <td className="px-4 py-3 text-xs whitespace-nowrap max-w-[200px] truncate" title={entry.contractor_data?.contractor_name}>
+                                                            {entry.contractor_data?.contractor_name || 'Unknown'}
+                                                        </td>
+                                                        <td className="px-4 py-3 text-xs whitespace-nowrap font-medium text-foreground">
+                                                            ₹{entry.amount.toLocaleString('en-IN')}
+                                                        </td>
+                                                        <td className="px-4 py-3 text-xs whitespace-nowrap">
+                                                            {entry.expense_category ? (
+                                                                <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-100">
+                                                                    {entry.expense_category}
+                                                                </span>
+                                                            ) : '-'}
+                                                        </td>
+                                                        <td className="px-4 py-3 text-xs whitespace-nowrap max-w-[200px] truncate" title={entry.remarks}>
+                                                            {entry.remarks || '-'}
+                                                        </td>
+
+                                                        <td className="px-4 py-3 text-xs whitespace-nowrap">
+                                                            <span className={`px-2 py-0.5 rounded border ${entry.reimbursement_status === 'Pending'
+                                                                ? 'bg-yellow-50 text-yellow-700 border-yellow-100'
+                                                                : 'bg-green-50 text-green-700 border-green-100'
+                                                                }`}>
+                                                                {entry.reimbursement_status}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-4 py-3 text-xs whitespace-nowrap text-muted-foreground">
+                                                            <div className="flex flex-col">
+                                                                <span className="text-foreground font-medium">₹{entry.reimbursed_amount?.toLocaleString('en-IN') || 0}</span>
+                                                                {entry.reimbursed_at && (
+                                                                    <span className="text-[10px] text-muted-foreground">
+                                                                        {new Date(entry.reimbursed_at).toLocaleDateString()}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-4 py-3 text-xs whitespace-nowrap text-muted-foreground">
+                                                            {entry.cac_bills?.length > 0 ? (
+                                                                <div className="flex flex-col gap-1">
+                                                                    {entry.cac_bills.map((bill, index) => (
+                                                                        <a
+                                                                            key={bill.id}
+                                                                            href={bill.bill_url}
+                                                                            target="_blank"
+                                                                            rel="noopener noreferrer"
+                                                                            className="flex items-center gap-1 text-primary cursor-pointer hover:underline text-xs"
+                                                                        >
+                                                                            <ImageIcon className="w-3 h-3" />
+                                                                            <span>View Bill {index + 1}</span>
+                                                                        </a>
+                                                                    ))}
+                                                                </div>
+                                                            ) : '-'}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+
+                                    {/* Mobile Cards View */}
+                                    <div className="md:hidden space-y-4 p-4 pb-20">
                                         {enrichedCacEntries.map((entry) => (
-                                            <tr key={entry.id || entry.created_at} className="hover:bg-muted/30 transition-colors">
-                                                <td className="px-4 py-3 text-xs whitespace-nowrap text-muted-foreground">
-                                                    {new Date(entry.expense_date).toLocaleDateString('en-GB')}
-                                                </td>
-                                                <td className="px-4 py-3 text-xs whitespace-nowrap">
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="font-medium text-foreground">{entry.users?.full_name || '-'}</span>
-                                                        <span className="bg-muted text-muted-foreground px-1.5 py-0.5 rounded border border-border">
-                                                            {entry.user_id}
+                                            <div key={entry.id || entry.created_at} className="bg-card rounded-xl border border-border p-4 shadow-sm flex flex-col gap-3 relative overflow-hidden">
+                                                {/* Header: Name & Date */}
+                                                <div className="flex justify-between items-start gap-4">
+                                                    <div className="min-w-0 flex-1">
+                                                        <h3 className="font-semibold text-foreground text-base break-words leading-tight mb-1">
+                                                            {entry.contractor_data?.contractor_name || 'Unknown'}
+                                                        </h3>
+                                                        <div className="flex flex-wrap items-center gap-2">
+                                                            <span className="text-[10px] bg-muted text-muted-foreground px-1.5 py-0.5 rounded border border-border/50 break-all">
+                                                                {entry.contractor_id}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex flex-col items-end shrink-0">
+                                                        <span className="text-[10px] text-muted-foreground font-medium">
+                                                            {new Date(entry.expense_date).toLocaleDateString('en-GB')}
                                                         </span>
                                                     </div>
-                                                </td>
-                                                <td className="px-4 py-3 text-xs whitespace-nowrap font-medium text-foreground">
-                                                    {entry.contractor_id}
-                                                </td>
-                                                <td className="px-4 py-3 text-xs whitespace-nowrap max-w-[200px] truncate" title={entry.contractor_data?.contractor_name}>
-                                                    {entry.contractor_data?.contractor_name || 'Unknown'}
-                                                </td>
-                                                <td className="px-4 py-3 text-xs whitespace-nowrap font-medium text-foreground">
-                                                    ₹{entry.amount.toLocaleString('en-IN')}
-                                                </td>
-                                                <td className="px-4 py-3 text-xs whitespace-nowrap">
-                                                    {entry.expense_category ? (
-                                                        <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-100">
-                                                            {entry.expense_category}
-                                                        </span>
-                                                    ) : '-'}
-                                                </td>
-                                                <td className="px-4 py-3 text-xs whitespace-nowrap max-w-[200px] truncate" title={entry.remarks}>
-                                                    {entry.remarks || '-'}
-                                                </td>
+                                                </div>
 
-                                                <td className="px-4 py-3 text-xs whitespace-nowrap">
-                                                    <span className={`px-2 py-0.5 rounded border ${entry.reimbursement_status === 'Pending'
-                                                        ? 'bg-yellow-50 text-yellow-700 border-yellow-100'
-                                                        : 'bg-green-50 text-green-700 border-green-100'
-                                                        }`}>
-                                                        {entry.reimbursement_status}
-                                                    </span>
-                                                </td>
-                                                <td className="px-4 py-3 text-xs whitespace-nowrap text-muted-foreground">
-                                                    <div className="flex flex-col">
-                                                        <span className="text-foreground font-medium">₹{entry.reimbursed_amount?.toLocaleString('en-IN') || 0}</span>
-                                                        {entry.reimbursed_at && (
-                                                            <span className="text-[10px] text-muted-foreground">
-                                                                {new Date(entry.reimbursed_at).toLocaleDateString()}
+                                                {/* Divider */}
+                                                <div className="h-px bg-gradient-to-r from-transparent via-border to-transparent w-full opacity-50" />
+
+                                                {/* Details Grid */}
+                                                <div className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                                                    <div className="col-span-2 sm:col-span-1">
+                                                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-bold mb-0.5">Category</p>
+                                                        {entry.expense_category ? (
+                                                            <span className="inline-block bg-blue-50/50 text-blue-700 text-xs px-2 py-0.5 rounded border border-blue-100/50">
+                                                                {entry.expense_category}
                                                             </span>
+                                                        ) : (
+                                                            <span className="text-muted-foreground text-xs">-</span>
                                                         )}
                                                     </div>
-                                                </td>
-                                                <td className="px-4 py-3 text-xs whitespace-nowrap text-muted-foreground">
-                                                    {entry.cac_bills?.length > 0 ? (
-                                                        <div className="flex flex-col gap-1">
+
+                                                    <div className="col-span-2 sm:col-span-1">
+                                                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-bold mb-0.5">Reimbursement Status</p>
+                                                        <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium border ${entry.reimbursement_status === 'Pending'
+                                                            ? 'bg-yellow-50/50 text-yellow-700 border-yellow-100/50'
+                                                            : 'bg-green-50/50 text-green-700 border-green-100/50'
+                                                            }`}>
+                                                            {entry.reimbursement_status}
+                                                        </span>
+                                                    </div>
+
+                                                    <div className="col-span-2">
+                                                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-bold mb-0.5">Created By</p>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-foreground text-xs font-medium">{entry.users?.full_name || '-'}</span>
+                                                            <span className="text-[10px] bg-muted/50 text-muted-foreground px-1.5 py-0 rounded border border-border/50">
+                                                                {entry.user_id}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+
+                                                    {entry.remarks && (
+                                                        <div className="col-span-2">
+                                                            <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-bold mb-0.5">Remarks</p>
+                                                            <p className="text-foreground text-xs bg-muted/20 p-2 rounded-lg border border-border/30">
+                                                                {entry.remarks}
+                                                            </p>
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                {/* Reimbursement Details if applicable */}
+                                                {(entry.reimbursed_amount > 0 || entry.reimbursed_at) && (
+                                                    <div className="bg-muted/30 p-2.5 rounded-lg border border-border/30 mt-1">
+                                                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-bold mb-1">Reimbursement Details</p>
+                                                        <div className="flex justify-between items-center text-xs">
+                                                            <span className="font-medium">Paid: ₹{entry.reimbursed_amount?.toLocaleString('en-IN') || 0}</span>
+                                                            {entry.reimbursed_at && <span className="text-muted-foreground">{new Date(entry.reimbursed_at).toLocaleDateString()}</span>}
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {/* Total Amount */}
+                                                <div className="mt-2 flex justify-end items-center border-t border-dashed border-border/50 pt-2">
+                                                    <span className="text-xs text-muted-foreground mr-2 font-medium">Total Amount:</span>
+                                                    <span className="font-bold text-xl text-primary">
+                                                        ₹{entry.amount.toLocaleString('en-IN')}
+                                                    </span>
+                                                </div>
+
+                                                {/* Attachments */}
+                                                {entry.cac_bills?.length > 0 && (
+                                                    <div className="flex items-center gap-2 mt-1">
+                                                        <ImageIcon className="w-3.5 h-3.5 text-muted-foreground" />
+                                                        <div className="flex flex-wrap gap-2 text-xs">
                                                             {entry.cac_bills.map((bill, index) => (
                                                                 <a
                                                                     key={bill.id}
                                                                     href={bill.bill_url}
                                                                     target="_blank"
                                                                     rel="noopener noreferrer"
-                                                                    className="flex items-center gap-1 text-primary cursor-pointer hover:underline text-xs"
+                                                                    className="text-primary hover:underline hover:text-primary/80 transition-colors"
                                                                 >
-                                                                    <ImageIcon className="w-3 h-3" />
-                                                                    <span>View Bill {index + 1}</span>
+                                                                    View Bill {index + 1}
                                                                 </a>
                                                             ))}
                                                         </div>
-                                                    ) : '-'}
-                                                </td>
-                                            </tr>
+                                                    </div>
+                                                )}
+                                            </div>
                                         ))}
-                                    </tbody>
-                                </table>
+                                    </div>
+                                </>
                             ) : (
                                 <div className="flex flex-col items-center justify-center py-32 text-muted-foreground/30">
                                     <Filter className="w-12 h-12 mb-4 opacity-50" />
@@ -876,9 +1024,10 @@ const CAC = () => {
                             )}
                         </div>
                     </div>
-                )}
-            </div>
-        </div>
+                )
+                }
+            </div >
+        </div >
     );
 };
 
