@@ -103,7 +103,18 @@ const SearchableInput = ({ options = [], onSelect, ...props }) => {
     const filteredOptions = useMemo(() => {
         if (props.readOnly) return options;
         if (!props.value) return options;
+
         const normalizedSearch = props.value.toLowerCase();
+
+        // Show all options if the current value matches an option exactly
+        // This allows users to change selection without clearing the input first
+        const isExactMatch = options.some(opt => {
+            const label = typeof opt === 'string' ? opt : opt.label;
+            return label.toLowerCase() === normalizedSearch;
+        });
+
+        if (isExactMatch) return options;
+
         return options.filter(opt => {
             const label = typeof opt === 'string' ? opt : opt.label;
             return label.toLowerCase().includes(normalizedSearch);
