@@ -646,7 +646,13 @@ const CAC = () => {
                                                 const val = e.target.value;
                                                 // Only allow integer input
                                                 if (/^\d*$/.test(val)) {
-                                                    setAmount(val);
+                                                    // Prevent leading zeros (e.g. 00000 -> 0, 05 -> 5)
+                                                    if (val.length > 1 && val.startsWith('0')) {
+                                                        const formatted = val.replace(/^0+/, '');
+                                                        setAmount(formatted === '' ? '0' : formatted);
+                                                    } else {
+                                                        setAmount(val);
+                                                    }
                                                 }
                                             }}
                                             className="pl-8"
