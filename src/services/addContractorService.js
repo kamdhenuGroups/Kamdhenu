@@ -18,12 +18,18 @@ export const addContractorService = {
         }
     },
 
-    checkPhoneUnique: async (phone) => {
+    checkPhoneUnique: async (phone, excludeContractorId = null) => {
         try {
-            const { data, error } = await supabase
+            let query = supabase
                 .from('contractor_data')
                 .select('contractor_id')
                 .eq('customer_phone', phone);
+
+            if (excludeContractorId) {
+                query = query.neq('contractor_id', excludeContractorId);
+            }
+
+            const { data, error } = await query;
 
             if (error) throw error;
             return { exists: data.length > 0, error: null };
@@ -62,6 +68,8 @@ export const addContractorService = {
             return { exists: false, error };
         }
     },
+
+
 
     // Fetch all active users (for admin selection)
     getUsers: async () => {

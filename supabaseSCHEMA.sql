@@ -43,6 +43,9 @@ CREATE TABLE public.contractor_data (
   state text,
   city text,
   mistry_name text,
+  status text DEFAULT 'Approved'::text CHECK (status = ANY (ARRAY['Pending'::text, 'Approved'::text, 'Rejected'::text])),
+  created_at timestamp with time zone DEFAULT timezone('Asia/Kolkata'::text, now()),
+  created_by_user_id text,
   CONSTRAINT contractor_data_pkey PRIMARY KEY (contractor_id)
 );
 CREATE TABLE public.customers (

@@ -400,6 +400,8 @@ const AddContractors = () => {
             //     return;
             // }
 
+            const status = isAdmin ? 'Approved' : 'Pending';
+
             const contractorPayload = {
                 contractor_id: generatedId,
                 contractor_name: contractorName,
@@ -408,7 +410,9 @@ const AddContractors = () => {
                 customer_type: customerType,
                 state: selectedState,
                 city: selectedCity,
-                mistry_name: mistryName || null
+                mistry_name: mistryName || null,
+                status: status,
+                created_by_user_id: user?.user_id
             };
 
             const { data, error } = await addContractorService.createContractor(contractorPayload);
@@ -426,7 +430,12 @@ const AddContractors = () => {
                     await addContractorService.assignContractorToUser(targetUserId, contractorPayload.contractor_id);
                 }
 
-                toast.success('Contractor added successfully!');
+                if (status === 'Pending') {
+                    toast.success('Submitted for approval!');
+                } else {
+                    toast.success('Contractor added successfully!');
+                }
+
                 // Reset form
                 setContractorName('');
                 setCustomerPhone('');

@@ -22,6 +22,7 @@ import {
     ArrowDown
 } from 'lucide-react';
 import { orderService } from '../services/orderService';
+import NewContractorApproval from '../components/NewContractorApproval';
 import { format } from 'date-fns';
 import toast, { Toaster } from 'react-hot-toast';
 import PaymentDetailsCard from '../components/PaymentDetailsCard';
@@ -34,7 +35,7 @@ const STATUS_COLORS = {
     'New': 'bg-blue-100 text-blue-800 border-blue-200'
 };
 
-const CRM = () => {
+const OrdersTab = () => {
     const [orders, setOrders] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
@@ -208,7 +209,7 @@ const CRM = () => {
 
     return (
         <div className="p-6 space-y-6 bg-slate-50 min-h-screen">
-            <Toaster position="top-right" />
+
 
             {/* Header */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -638,6 +639,49 @@ const CRM = () => {
                 )
             }
         </div >
+    );
+};
+
+
+
+const CRM = () => {
+    const [activeTab, setActiveTab] = useState('orders');
+
+    return (
+        <div className="min-h-screen bg-slate-50 font-sans">
+            <Toaster position="top-right" />
+
+            {/* Minimal Header & Navigation */}
+            <div className="sticky top-0 z-20 bg-slate-50/80 backdrop-blur-xl border-b border-slate-200/60 px-6 py-4 flex items-center justify-between">
+                <div className="flex bg-slate-200/50 p-1 rounded-xl border border-slate-200/50">
+                    <button
+                        onClick={() => setActiveTab('orders')}
+                        className={`px-6 py-2 rounded-lg text-sm font-semibold transition-all duration-200 flex items-center gap-2 ${activeTab === 'orders'
+                            ? 'bg-white text-slate-900 shadow-sm ring-1 ring-black/5'
+                            : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
+                            }`}
+                    >
+                        <Package size={16} className={activeTab === 'orders' ? 'text-blue-600' : ''} />
+                        Orders
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('approval')}
+                        className={`px-6 py-2 rounded-lg text-sm font-semibold transition-all duration-200 flex items-center gap-2 ${activeTab === 'approval'
+                            ? 'bg-white text-slate-900 shadow-sm ring-1 ring-black/5'
+                            : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200/50'
+                            }`}
+                    >
+                        <Users size={16} className={activeTab === 'approval' ? 'text-blue-600' : ''} />
+                        New Influencer's Approvals
+                    </button>
+                </div>
+            </div>
+
+            {/* Tab Content */}
+            <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+                {activeTab === 'orders' ? <OrdersTab /> : <NewContractorApproval />}
+            </div>
+        </div>
     );
 };
 
