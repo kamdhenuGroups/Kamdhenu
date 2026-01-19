@@ -13,9 +13,9 @@ import {
     Truck,
     CreditCard,
     MapPin,
-    ArrowUpRight,
-    ArrowDownRight,
-    Clock,
+
+
+
     ChevronDown,
     X,
     ArrowUp,
@@ -53,13 +53,7 @@ const OrdersTab = () => {
     const [showModal, setShowModal] = useState(false);
     const [sortConfig, setSortConfig] = useState({ key: 'order_date', direction: 'desc' });
 
-    // Stats State
-    const [stats, setStats] = useState({
-        total: 0,
-        pending: 0,
-        approved: 0,
-        revenue: 0
-    });
+
 
     useEffect(() => {
         fetchOrders();
@@ -85,21 +79,12 @@ const OrdersTab = () => {
             const uniqueTypes = [...new Set((data || []).map(o => o.customer_type).filter(t => t))].sort();
             setTypes(uniqueTypes);
 
-            calculateStats(data || []);
+
         }
         setLoading(false);
     };
 
-    const calculateStats = (data) => {
-        const stats = data.reduce((acc, order) => {
-            acc.total++;
-            if (order.order_status === 'Pending') acc.pending++;
-            if (order.order_status === 'Approved') acc.approved++;
-            acc.revenue += Number(order.total_amount) || 0;
-            return acc;
-        }, { total: 0, pending: 0, approved: 0, revenue: 0 });
-        setStats(stats);
-    };
+
 
     const handleStatusUpdate = async (orderId, newStatus) => {
         const loadingToast = toast.loading(`Updating order to ${newStatus}...`);
@@ -114,7 +99,7 @@ const OrdersTab = () => {
                 o.order_id === orderId ? { ...o, order_status: newStatus } : o
             );
             setOrders(updatedOrders);
-            calculateStats(updatedOrders);
+
             if (selectedOrder && selectedOrder.order_id === orderId) {
                 setSelectedOrder({ ...selectedOrder, order_status: newStatus });
             }
@@ -227,34 +212,7 @@ const OrdersTab = () => {
             </div>
 
             {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <StatCard
-                    title="Total Orders"
-                    value={stats.total}
-                    icon={Package}
-                    color="blue"
-                    trend="+12% from last month"
-                />
-                <StatCard
-                    title="Pending Approvals"
-                    value={stats.pending}
-                    icon={Clock}
-                    color="amber"
-                    isWarning={stats.pending > 0}
-                />
-                <StatCard
-                    title="Approved Orders"
-                    value={stats.approved}
-                    icon={CheckCircle}
-                    color="emerald"
-                />
-                <StatCard
-                    title="Total Revenue"
-                    value={formatCurrency(stats.revenue)}
-                    icon={CreditCard}
-                    color="purple"
-                />
-            </div>
+
 
             {/* Filters Bar */}
             {/* Filters Bar */}
@@ -686,27 +644,7 @@ const CRM = () => {
 };
 
 // Helper Components
-const StatCard = ({ title, value, icon: Icon, color, trend, isWarning }) => (
-    <div className={`bg-white rounded-xl shadow-sm border border-slate-100 p-6 flex flex-col justify-between transition-transform hover:-translate-y-1 ${isWarning ? 'ring-2 ring-amber-400 ring-offset-2' : ''}`}>
-        <div className="flex items-start justify-between">
-            <div>
-                <p className="text-slate-500 text-sm font-medium uppercase tracking-wider">{title}</p>
-                <h3 className="text-3xl font-bold mt-2 text-slate-900">{value}</h3>
-            </div>
-            <div className={`p-3 rounded-xl bg-${color}-50 text-${color}-600`}>
-                <Icon size={24} />
-            </div>
-        </div>
-        {trend && (
-            <div className="mt-4 flex items-center text-sm">
-                <span className="text-emerald-600 font-medium flex items-center gap-1">
-                    <ArrowUpRight size={16} />
-                    {trend}
-                </span>
-            </div>
-        )}
-    </div>
-);
+
 
 const FilterButton = ({ label, active, onClick, count, color = 'blue' }) => (
     <button

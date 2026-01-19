@@ -600,7 +600,13 @@ const CAC = () => {
         // 2. Determine Group Status & Calculate Totals
         const finalResult = result.map(group => {
             // Fix floating point math artifacts
-            group.totalAmount = Math.round(group.totalAmount * 100) / 100;
+            // For split expenses (groups), force integer total to return to the original entered amount
+            // and avoid 9999.99 artifacts as per user requirement.
+            if (group.members.length > 1) {
+                group.totalAmount = Math.round(group.totalAmount);
+            } else {
+                group.totalAmount = Math.round(group.totalAmount * 100) / 100;
+            }
 
             if (group.members.length > 1) {
                 // It is a group
@@ -1097,7 +1103,7 @@ const CAC = () => {
                                             value={location}
                                             onChange={(e) => setLocation(e.target.value)}
                                             className="pl-9"
-                                            placeholder="Ex: Hotel Landmark, Chaigovindam etc"
+                                            placeholder="Ex: Pan Tapri, Hotel Landmark, Chai govindam etc"
                                         />
                                     </div>
                                 </InputGroup>
@@ -1295,7 +1301,7 @@ const CAC = () => {
                                                                 entry.contractor_data?.contractor_name || 'Unknown'
                                                             )}
                                                         </td>
-                                                        <td className="px-4 py-3 text-xs whitespace-normal break-words" title={entry.location}>
+                                                        <td className="px-4 py-3 text-xs whitespace-normal break-words min-w-[150px]" title={entry.location}>
                                                             {entry.location || '-'}
                                                         </td>
                                                         <td className="px-4 py-3 text-xs whitespace-nowrap font-medium text-foreground">
@@ -1311,7 +1317,7 @@ const CAC = () => {
                                                         <td className="px-4 py-3 text-xs whitespace-nowrap max-w-[150px] truncate" title={entry.other_expense_category}>
                                                             {entry.other_expense_category || '-'}
                                                         </td>
-                                                        <td className="px-4 py-3 text-xs whitespace-nowrap max-w-[200px] truncate" title={entry.remarks}>
+                                                        <td className="px-4 py-3 text-xs whitespace-normal break-words min-w-[200px]" title={entry.remarks}>
                                                             {entry.remarks || '-'}
                                                         </td>
 

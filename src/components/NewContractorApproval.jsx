@@ -35,7 +35,7 @@ const ModalInput = ({ label, value, onChange, placeholder, required, readOnly, t
     </div>
 );
 
-const ModalSelect = ({ label, value, onChange, options, required, disabled }) => (
+const ModalSelect = ({ label, value, onChange, options, required, disabled, showDefaultOption = true }) => (
     <div className="flex flex-col gap-1.5">
         <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
             {label} {required && <span className="text-red-500">*</span>}
@@ -47,7 +47,7 @@ const ModalSelect = ({ label, value, onChange, options, required, disabled }) =>
                 disabled={disabled}
                 className={`w-full appearance-none px-3 py-2 border rounded-lg text-sm bg-slate-50 focus:bg-white transition-colors outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 disabled:opacity-50 disabled:cursor-not-allowed ${disabled ? 'bg-slate-100' : 'border-slate-200 cursor-pointer'}`}
             >
-                <option value="">Select...</option>
+                {showDefaultOption && <option value="">Select...</option>}
                 {options.map((opt) => (
                     <option key={opt} value={opt}>{opt}</option>
                 ))}
@@ -293,7 +293,7 @@ const NewContractorApproval = () => {
 
     // Use shared CUSTOMER_TYPES for consistency across the app
     // This ensures ID generation logic (prefixes) works correctly
-    const customerTypes = CUSTOMER_TYPES;
+    const customerTypes = CUSTOMER_TYPES.filter(type => type !== 'Customer');
 
     return (
         <div className="p-6 min-h-screen bg-slate-50">
@@ -332,6 +332,7 @@ const NewContractorApproval = () => {
                             <thead>
                                 <tr className="bg-slate-50 border-b border-slate-200">
                                     <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Name / ID</th>
+                                    <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Created By</th>
                                     <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Type</th>
                                     <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Phone</th>
                                     <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Location</th>
@@ -342,9 +343,19 @@ const NewContractorApproval = () => {
                             <tbody className="divide-y divide-slate-100">
                                 {contractors.map((c) => (
                                     <tr key={c.contractor_id} className="hover:bg-slate-50/50 transition-colors">
-                                        <td className="px-6 py-4">
+                                        <td className="px-6 py-4" style={{ whiteSpace: 'nowrap' }}>
                                             <div className="font-medium text-slate-900">{c.contractor_name}</div>
                                             <div className="text-xs text-slate-500 mt-0.5">{c.contractor_id}</div>
+                                        </td>
+                                        <td className="px-6 py-4" style={{ whiteSpace: 'nowrap' }}>
+                                            {c.created_by_user ? (
+                                                <>
+                                                    <div className="font-medium text-slate-900">{c.created_by_user.full_name}</div>
+                                                    <div className="text-xs text-slate-500 mt-0.5">{c.created_by_user.user_id}</div>
+                                                </>
+                                            ) : (
+                                                <span className="text-slate-400 italic">Unknown</span>
+                                            )}
                                         </td>
                                         <td className="px-6 py-4">
                                             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
@@ -408,6 +419,20 @@ const NewContractorApproval = () => {
                                 </div>
 
                                 <div className="md:col-span-2 flex flex-col gap-1.5">
+                                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Created By</label>
+                                    <div className="px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 text-slate-700">
+                                        {editingContractor.created_by_user ? (
+                                            <div className="flex flex-col">
+                                                <span className="font-medium">{editingContractor.created_by_user.full_name}</span>
+                                                <span className="text-xs text-slate-500">{editingContractor.created_by_user.user_id}</span>
+                                            </div>
+                                        ) : (
+                                            <span className="text-slate-400 italic">Unknown User</span>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="md:col-span-2 flex flex-col gap-1.5">
                                     <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Influencer ID</label>
                                     <div className={`px-3 py-2 border rounded-lg text-sm flex justify-between items-center ${generatedId !== editingContractor.contractor_id ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-slate-100 border-slate-200 text-slate-500'
                                         }`}>
@@ -424,6 +449,7 @@ const NewContractorApproval = () => {
                                     value={formData.customer_type}
                                     onChange={(e) => handleFieldChange('customer_type', e.target.value)}
                                     options={customerTypes}
+                                    showDefaultOption={false}
                                 />
 
                                 <ModalInput
@@ -434,12 +460,14 @@ const NewContractorApproval = () => {
                                     placeholder="Enter full name"
                                 />
 
-                                <ModalInput
-                                    label="Nickname"
-                                    value={formData.nickname}
-                                    onChange={(e) => handleFieldChange('nickname', e.target.value)}
-                                    placeholder="e.g. Raju"
-                                />
+                                {formData.customer_type === 'Contractor' && (
+                                    <ModalInput
+                                        label="Nickname"
+                                        value={formData.nickname}
+                                        onChange={(e) => handleFieldChange('nickname', e.target.value)}
+                                        placeholder="e.g. Raju"
+                                    />
+                                )}
 
                                 {/* Conditional Mistry Name */}
                                 {formData.customer_type === 'Mistry' && (
