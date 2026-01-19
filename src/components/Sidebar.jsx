@@ -92,7 +92,7 @@ const Sidebar = ({ onClose }) => {
     { path: '/create-order', icon: ShoppingBag, label: 'Create Order', id: 'create-order' },
     { path: '/add-customers', icon: UserPlus, label: 'Add Customers', id: 'add-customers' },
     { path: '/add-sites', icon: MapPin, label: 'Add Sites', id: 'add-sites' },
-    { path: '/add-contractors', icon: HardHat, label: 'Add Contractors', id: 'add-contractors' },
+    { path: '/add-contractors', icon: HardHat, label: 'Add Influencer', id: 'add-contractors' },
     { path: '/cac', icon: DollarSign, label: 'CAC', id: 'cac' },
     { path: '/leads', icon: Users, label: 'Leads', id: 'leads' },
     { path: '/crm', icon: Briefcase, label: 'CRM', id: 'crm' },

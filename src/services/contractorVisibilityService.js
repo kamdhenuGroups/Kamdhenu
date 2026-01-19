@@ -9,7 +9,7 @@ export const getContractors = async () => {
     // Sorting is now handled in the application layer.
     const { data, error } = await supabase
         .from('contractor_data')
-        .select('contractor_id, contractor_name, nickname, city, customer_type');
+        .select('contractor_id, contractor_name, nickname, city, customer_type, status');
 
     if (error) throw error;
 

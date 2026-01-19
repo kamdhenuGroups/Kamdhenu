@@ -4,12 +4,17 @@ export const newContractorApprovalService = {
     // Fetch pending contractors for approval
     // Fetch pending contractors for approval
     getPendingContractors: async () => {
+        return newContractorApprovalService.getContractorsByStatus(['Pending']);
+    },
+
+    // Fetch contractors by status array
+    getContractorsByStatus: async (statuses) => {
         try {
             // 1. Get contractors
             const { data: contractors, error: contractorsError } = await supabase
                 .from('contractor_data')
                 .select('*')
-                .eq('status', 'Pending')
+                .in('status', statuses)
                 .order('created_at', { ascending: false });
 
             if (contractorsError) throw contractorsError;
@@ -40,7 +45,7 @@ export const newContractorApprovalService = {
 
             return { data: enrichedContractors, error: null };
         } catch (error) {
-            console.error('Error fetching pending contractors:', error);
+            console.error('Error fetching contractors:', error);
             return { data: [], error };
         }
     },
@@ -75,6 +80,38 @@ export const newContractorApprovalService = {
         } catch (error) {
             console.error('Error updating contractor details:', error);
             return { data: null, error };
+        }
+    },
+
+    // Assign contractor to user
+    assignContractorToUser: async (userId, contractorId) => {
+        try {
+            // Check if already exists to avoid error
+            const { data: existing } = await supabase
+                .from('user_contractor_access')
+                .select('id')
+                .eq('user_id', userId)
+                .eq('contractor_id', contractorId)
+                .single();
+
+            if (existing) return { error: null };
+
+            const { error } = await supabase
+                .from('user_contractor_access')
+                .insert([
+                    {
+                        user_id: userId,
+                        contractor_id: contractorId,
+                        can_view: true,
+                        can_edit: false
+                    }
+                ]);
+
+            if (error) throw error;
+            return { error: null };
+        } catch (error) {
+            console.error('Error assigning contractor to user:', error);
+            return { error };
         }
     }
 };

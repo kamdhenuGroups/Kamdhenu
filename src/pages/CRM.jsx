@@ -610,7 +610,7 @@ const CRM = () => {
             <Toaster position="top-right" />
 
             {/* Minimal Header & Navigation */}
-            <div className="sticky top-0 z-20 bg-slate-50/80 backdrop-blur-xl border-b border-slate-200/60 px-6 py-4 flex items-center justify-between">
+            <div className="bg-slate-50 border-b border-slate-200 px-6 py-4 flex items-center justify-between">
                 <div className="flex bg-slate-200/50 p-1 rounded-xl border border-slate-200/50">
                     <button
                         onClick={() => setActiveTab('orders')}

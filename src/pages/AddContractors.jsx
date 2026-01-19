@@ -425,8 +425,9 @@ const AddContractors = () => {
                 }
             } else {
                 // Assign to user
+                // Assign to user ONLY if Approved
                 const targetUserId = isAdmin ? selectedUserId : user?.user_id;
-                if (targetUserId) {
+                if (targetUserId && status === 'Approved') {
                     await addContractorService.assignContractorToUser(targetUserId, contractorPayload.contractor_id);
                 }
 
@@ -482,7 +483,7 @@ const AddContractors = () => {
             {/* Header Area */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 shrink-0">
                 <div>
-                    <h1 className="text-3xl font-light text-foreground tracking-tight">Contractor Management</h1>
+                    <h1 className="text-3xl font-light text-foreground tracking-tight">Influencer Management</h1>
                     <p className="text-muted-foreground text-sm mt-1">Register new partners and manage profiles.</p>
                 </div>
             </div>
@@ -504,7 +505,7 @@ const AddContractors = () => {
                                 <div>
                                     <p className={`text-xs font-medium uppercase tracking-wider ${idError ? 'text-destructive' : 'text-muted-foreground'
                                         }`}>
-                                        {idError ? 'Unavailable ID' : 'New Contractor ID'}
+                                        {idError ? 'Unavailable ID' : 'New Influencer ID'}
                                     </p>
                                     <p className={`text-lg font-semibold tracking-tight ${idError ? 'text-destructive' : 'text-foreground'
                                         }`}>
@@ -562,7 +563,7 @@ const AddContractors = () => {
                                 />
                             </InputGroup>
 
-                            <InputGroup label="Contractor's Name" required>
+                            <InputGroup label="Influencer's Name" required>
                                 <TextInput
                                     type="text"
                                     value={contractorName}
@@ -681,7 +682,7 @@ const AddContractors = () => {
                                 className="flex items-center gap-2 bg-primary text-primary-foreground px-8 py-2.5 rounded-xl hover:bg-primary/90 transition-all font-semibold disabled:opacity-50 text-sm shadow-sm"
                             >
                                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                                {loading ? 'Registering...' : 'Register Contractor'}
+                                {loading ? 'Registering...' : 'Register Influencer'}
                             </button>
                         </div>
 

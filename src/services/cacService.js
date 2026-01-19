@@ -10,7 +10,9 @@ export const getContractors = async (currentUser) => {
     if (!currentUser) return [];
 
     try {
-        let query = supabase.from('contractor_data').select('*');
+        let query = supabase.from('contractor_data').select('*')
+            .neq('status', 'Pending')
+            .neq('status', 'Rejected');
 
         // If NOT admin, filter by access
         const isAdmin = (currentUser.role && currentUser.role.toLowerCase() === 'admin') || currentUser.Admin === 'Yes';

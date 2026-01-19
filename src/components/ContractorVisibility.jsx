@@ -46,7 +46,7 @@ const ContractorVisibility = ({ users }) => {
 
     // Filtered Contractors
     const filteredContractors = useMemo(() => {
-        let result = contractors;
+        let result = contractors.filter(c => c.status === 'Approved');
 
         // Filter out contractors that are already assigned to any user
         const assignedContractorIds = new Set(
@@ -294,7 +294,12 @@ const ContractorVisibility = ({ users }) => {
                     ) : (
                         filteredAccessUsers.map(user => {
                             const isExpanded = expandedUserId === user.user_id;
-                            const assigned = userAssignments[user.user_id] || [];
+                            const rawAssigned = userAssignments[user.user_id] || [];
+                            const assigned = rawAssigned.filter(id => {
+                                const c = contractors.find(ct => ct.contractor_id === id);
+                                // Ensure we only count/show approved contractors
+                                return c?.status === 'Approved';
+                            });
 
                             return (
                                 <div
@@ -355,6 +360,7 @@ const ContractorVisibility = ({ users }) => {
                                                     {assigned.map(contrId => {
                                                         // Find full contractor details if available, else just ID
                                                         const contrInfo = contractors.find(c => c.contractor_id === contrId) || { contractor_name: 'Unknown', contractor_id: contrId };
+
                                                         return (
                                                             <div key={contrId} className="flex justify-between items-center p-2 bg-white rounded border border-purple-100 shadow-sm">
                                                                 <div className="min-w-0">

@@ -8,7 +8,12 @@ import {
     Loader2,
     Save,
     RefreshCw,
-    Eye
+
+    Eye,
+    History,
+    ListFilter,
+    ChevronLeft,
+    ChevronRight,
 } from 'lucide-react';
 import { newContractorApprovalService } from '../services/newContractorApprovalService';
 import { addContractorService } from '../services/addContractorService';
@@ -16,6 +21,7 @@ import { idGenerator, CUSTOMER_TYPES } from '../services/orderService';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 import { INDIAN_LOCATIONS } from '../data/indianLocations';
+import TableFilterHeader from './TableFilterHeader';
 
 // Simple reused Input/Select components for the modal
 const ModalInput = ({ label, value, onChange, placeholder, required, readOnly, type = "text", error }) => (
@@ -62,8 +68,68 @@ const ModalSelect = ({ label, value, onChange, options, required, disabled, show
 );
 
 const NewContractorApproval = () => {
+    const [activeTab, setActiveTab] = useState('pending'); // 'pending' | 'history'
     const [contractors, setContractors] = useState([]);
     const [loading, setLoading] = useState(true);
+
+    // Filter State
+    const [filters, setFilters] = useState({
+        created_by: [],
+        customer_type: [],
+        city: [],
+        status: []
+    });
+
+    // Reset filters when tab changes
+    useEffect(() => {
+        setFilters({
+            created_by: [],
+            customer_type: [],
+            city: [],
+            status: []
+        });
+    }, [activeTab]);
+
+    const handleFilterChange = (key, values) => {
+        setFilters(prev => ({ ...prev, [key]: values }));
+    };
+
+    const getUniqueOptions = (field) => {
+        const unique = new Set(contractors.map(c => {
+            if (field === 'created_by') return c.created_by_user?.full_name || 'Super Admin';
+            return c[field];
+        }).filter(Boolean));
+        return Array.from(unique).sort();
+    };
+
+    const filteredContractors = useMemo(() => {
+        return contractors.filter(c => {
+            if (filters.created_by.length > 0) {
+                const name = c.created_by_user?.full_name || 'Super Admin';
+                if (!filters.created_by.includes(name)) return false;
+            }
+            if (filters.customer_type.length > 0 && (!c.customer_type || !filters.customer_type.includes(c.customer_type))) return false;
+            if (filters.city.length > 0 && (!c.city || !filters.city.includes(c.city))) return false;
+            if (filters.status.length > 0 && (!c.status || !filters.status.includes(c.status))) return false;
+            return true;
+        });
+    }, [contractors, filters]);
+
+    // Pagination State
+    const [currentPage, setCurrentPage] = useState(1);
+    const itemsPerPage = 10;
+
+    // Reset page when tab or filters change
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [activeTab, filters]);
+
+    const paginatedContractors = useMemo(() => {
+        const startIndex = (currentPage - 1) * itemsPerPage;
+        return filteredContractors.slice(startIndex, startIndex + itemsPerPage);
+    }, [filteredContractors, currentPage]);
+
+    const totalPages = Math.ceil(filteredContractors.length / itemsPerPage);
 
     // Modal State
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -158,16 +224,38 @@ const NewContractorApproval = () => {
     }, [formData.customer_phone, isModalOpen, editingContractor]);
 
     useEffect(() => {
-        fetchPendingContractors();
-    }, []);
+        fetchContractors();
+    }, [activeTab]);
 
-    const fetchPendingContractors = async () => {
+    const fetchContractors = async () => {
         setLoading(true);
-        const { data, error } = await newContractorApprovalService.getPendingContractors();
-        if (error) {
-            toast.error('Failed to fetch pending approvals');
+        let result;
+
+        if (activeTab === 'pending') {
+            result = await newContractorApprovalService.getContractorsByStatus(['Pending']);
         } else {
-            setContractors(data || []);
+            result = await newContractorApprovalService.getContractorsByStatus(['Approved', 'Rejected']);
+        }
+
+        const { data, error } = result;
+
+        if (error) {
+            toast.error('Failed to fetch contractors');
+        } else {
+            let sortedData = data || [];
+            if (activeTab === 'history') {
+                // Sort Rejected to the top, then by date desc
+                sortedData.sort((a, b) => {
+                    if (a.status === 'Rejected' && b.status !== 'Rejected') return -1;
+                    if (a.status !== 'Rejected' && b.status === 'Rejected') return 1;
+                    // Secondary sort by date
+                    return new Date(b.created_at || 0) - new Date(a.created_at || 0);
+                });
+            } else {
+                // Default sort by date desc
+                sortedData.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+            }
+            setContractors(sortedData);
         }
         setLoading(false);
     };
@@ -278,9 +366,41 @@ const NewContractorApproval = () => {
 
             if (approveError) throw approveError;
 
+            // 3. Assign to User (if applicable)
+            if (editingContractor.created_by_user_id) {
+                const { error: assignError } = await newContractorApprovalService.assignContractorToUser(
+                    editingContractor.created_by_user_id,
+                    targetId
+                );
+                if (assignError) {
+                    console.error('Failed to assign to user:', assignError);
+                    toast.error('Approved, but failed to assign to creator.');
+                }
+            }
+
             toast.success('Influencer approved successfully', { id: loadingToast });
-            // Remove from list
-            setContractors(prev => prev.filter(c => c.contractor_id !== editingContractor.contractor_id));
+
+            if (activeTab === 'history') {
+                setContractors(prev => {
+                    // Update the item
+                    const updatedList = prev.map(c =>
+                        c.contractor_id === editingContractor.contractor_id
+                            ? { ...c, ...updates, contractor_id: targetId, status: 'Approved' }
+                            : c
+                    );
+
+                    // Re-sort to move the now-approved item out of the top "Rejected" section
+                    return updatedList.sort((a, b) => {
+                        if (a.status === 'Rejected' && b.status !== 'Rejected') return -1;
+                        if (a.status !== 'Rejected' && b.status === 'Rejected') return 1;
+                        return new Date(b.created_at || 0) - new Date(a.created_at || 0);
+                    });
+                });
+            } else {
+                // If it was Pending, it moves to History tab, so remove from current view
+                setContractors(prev => prev.filter(c => c.contractor_id !== editingContractor.contractor_id));
+            }
+
             closeApproveModal();
 
         } catch (error) {
@@ -303,7 +423,7 @@ const NewContractorApproval = () => {
                     <p className="text-slate-500 mt-1">Review, edit, and approve new Influencer's registrations</p>
                 </div>
                 <button
-                    onClick={fetchPendingContractors}
+                    onClick={fetchContractors}
                     className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-300 rounded-lg text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors shadow-sm font-medium"
                 >
                     <LayoutDashboard size={18} />
@@ -311,38 +431,107 @@ const NewContractorApproval = () => {
                 </button>
             </div>
 
+            {/* Tabs */}
+            <div className="flex items-center gap-4 mb-6 border-b border-slate-200">
+                <button
+                    onClick={() => setActiveTab('pending')}
+                    className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'pending'
+                        ? 'border-blue-600 text-blue-600'
+                        : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+                        }`}
+                >
+                    <ListFilter size={18} />
+                    Pending Approvals
+                </button>
+                <button
+                    onClick={() => setActiveTab('history')}
+                    className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'history'
+                        ? 'border-blue-600 text-blue-600'
+                        : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+                        }`}
+                >
+                    <History size={18} />
+                    History (Approved/Rejected)
+                </button>
+            </div>
+
             {loading ? (
                 <div className="flex items-center justify-center p-12">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                 </div>
-            ) : contractors.length === 0 ? (
-                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-12 flex flex-col items-center justify-center text-center">
-                    <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
-                        <Users size={32} className="text-slate-400" />
-                    </div>
-                    <h3 className="text-lg font-medium text-slate-900">No Pending Approvals</h3>
-                    <p className="text-slate-500 max-w-sm mt-2">
-                        There are currently no new Influencer registrations waiting for approval.
-                    </p>
-                </div>
             ) : (
-                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
                     <div className="overflow-x-auto">
                         <table className="w-full text-left border-collapse">
                             <thead>
                                 <tr className="bg-slate-50 border-b border-slate-200">
-                                    <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Name / ID</th>
-                                    <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Created By</th>
-                                    <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Type</th>
-                                    <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Phone</th>
-                                    <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Location</th>
-                                    <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider">Registered</th>
-                                    <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider text-right">Actions</th>
+                                    <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Actions</th>
+                                    <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Name / ID</th>
+                                    <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
+                                        <TableFilterHeader
+                                            title="Created By"
+                                            options={getUniqueOptions('created_by')}
+                                            selectedValues={filters.created_by}
+                                            onChange={(vals) => handleFilterChange('created_by', vals)}
+                                        />
+                                    </th>
+                                    <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
+                                        <TableFilterHeader
+                                            title="Type"
+                                            options={getUniqueOptions('customer_type')}
+                                            selectedValues={filters.customer_type}
+                                            onChange={(vals) => handleFilterChange('customer_type', vals)}
+                                        />
+                                    </th>
+                                    <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Phone</th>
+                                    <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
+                                        <TableFilterHeader
+                                            title="Location"
+                                            options={getUniqueOptions('city')}
+                                            selectedValues={filters.city}
+                                            onChange={(vals) => handleFilterChange('city', vals)}
+                                        />
+                                    </th>
+                                    {activeTab === 'history' && (
+                                        <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
+                                            <TableFilterHeader
+                                                title="Status"
+                                                options={getUniqueOptions('status')}
+                                                selectedValues={filters.status}
+                                                onChange={(vals) => handleFilterChange('status', vals)}
+                                            />
+                                        </th>
+                                    )}
+                                    <th className="px-6 py-4 text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Registered</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100">
-                                {contractors.map((c) => (
+                                {paginatedContractors.map((c) => (
                                     <tr key={c.contractor_id} className="hover:bg-slate-50/50 transition-colors">
+                                        <td className="px-6 py-4">
+                                            <div className="flex items-center justify-start gap-2">
+                                                {activeTab === 'pending' ? (
+                                                    <button
+                                                        onClick={() => openApproveModal(c)}
+                                                        className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg text-sm font-medium transition-colors"
+                                                    >
+                                                        <Eye size={16} />
+                                                        Review
+                                                    </button>
+                                                ) : (
+                                                    <button
+                                                        onClick={() => openApproveModal(c)}
+                                                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${c.status === 'Rejected'
+                                                            ? 'bg-amber-50 text-amber-700 hover:bg-amber-100'
+                                                            : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
+                                                            }`}
+                                                    >
+                                                        <Eye size={16} />
+                                                        {c.status === 'Rejected' ? 'Edit' : 'View'}
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </td>
                                         <td className="px-6 py-4" style={{ whiteSpace: 'nowrap' }}>
                                             <div className="font-medium text-slate-900">{c.contractor_name}</div>
                                             <div className="text-xs text-slate-500 mt-0.5">{c.contractor_id}</div>
@@ -354,7 +543,7 @@ const NewContractorApproval = () => {
                                                     <div className="text-xs text-slate-500 mt-0.5">{c.created_by_user.user_id}</div>
                                                 </>
                                             ) : (
-                                                <span className="text-slate-400 italic">Unknown</span>
+                                                <span className="text-slate-400 italic">Super Admin</span>
                                             )}
                                         </td>
                                         <td className="px-6 py-4">
@@ -366,24 +555,62 @@ const NewContractorApproval = () => {
                                         <td className="px-6 py-4 text-sm text-slate-600">
                                             {c.city}, {c.state}
                                         </td>
+                                        {activeTab === 'history' && (
+                                            <td className="px-6 py-4">
+                                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${c.status === 'Approved'
+                                                    ? 'bg-emerald-100 text-emerald-800'
+                                                    : 'bg-rose-100 text-rose-800'
+                                                    }`}>
+                                                    {c.status}
+                                                </span>
+                                            </td>
+                                        )}
                                         <td className="px-6 py-4 text-sm text-slate-500">
                                             {c.created_at ? format(new Date(c.created_at), 'MMM d, yyyy') : '-'}
                                         </td>
-                                        <td className="px-6 py-4">
-                                            <div className="flex items-center justify-end gap-2">
-                                                <button
-                                                    onClick={() => openApproveModal(c)}
-                                                    className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg text-sm font-medium transition-colors"
-                                                >
-                                                    <Eye size={16} />
-                                                    Review
-                                                </button>
-                                            </div>
-                                        </td>
+                                    </tr>
+                                ))}
+                                {/* Empty Rows to ensure 10 rows per page */}
+                                {Array.from({ length: Math.max(0, itemsPerPage - paginatedContractors.length) }).map((_, index) => (
+                                    <tr key={`empty-${index}`} className="border-b border-slate-100 h-[75px]">
+                                        <td className="px-6 py-4">&nbsp;</td>
+                                        <td className="px-6 py-4">&nbsp;</td>
+                                        <td className="px-6 py-4">&nbsp;</td>
+                                        <td className="px-6 py-4">&nbsp;</td>
+                                        <td className="px-6 py-4">&nbsp;</td>
+                                        <td className="px-6 py-4">&nbsp;</td>
+                                        {activeTab === 'history' && <td className="px-6 py-4">&nbsp;</td>}
+                                        <td className="px-6 py-4">&nbsp;</td>
                                     </tr>
                                 ))}
                             </tbody>
                         </table>
+                    </div>
+
+                    {/* Pagination Controls */}
+                    <div className="flex items-center justify-between px-6 py-4 border-t border-slate-200 bg-slate-50">
+                        <div className="text-sm text-slate-500">
+                            Showing {filteredContractors.length === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, filteredContractors.length)} of {filteredContractors.length} entries
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                disabled={currentPage === 1}
+                                className="p-2 border border-slate-300 rounded-lg hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            >
+                                <ChevronLeft size={16} />
+                            </button>
+                            <span className="text-sm font-medium text-slate-700">
+                                Page {filteredContractors.length === 0 ? 0 : currentPage} of {filteredContractors.length === 0 ? 0 : totalPages}
+                            </span>
+                            <button
+                                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                disabled={currentPage === totalPages || totalPages === 0}
+                                className="p-2 border border-slate-300 rounded-lg hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            >
+                                <ChevronRight size={16} />
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
@@ -411,153 +638,194 @@ const NewContractorApproval = () => {
                         <div className="p-6 overflow-y-auto custom-scrollbar">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 {/* Identity */}
-                                <div className="md:col-span-2">
-                                    <h3 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
-                                        Identity
-                                        <div className="h-px bg-slate-100 flex-1"></div>
-                                    </h3>
-                                </div>
-
-                                <div className="md:col-span-2 flex flex-col gap-1.5">
-                                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Created By</label>
-                                    <div className="px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 text-slate-700">
-                                        {editingContractor.created_by_user ? (
-                                            <div className="flex flex-col">
-                                                <span className="font-medium">{editingContractor.created_by_user.full_name}</span>
-                                                <span className="text-xs text-slate-500">{editingContractor.created_by_user.user_id}</span>
+                                {(() => {
+                                    const isReadOnly = editingContractor?.status !== 'Pending' && editingContractor?.status !== 'Rejected';
+                                    return (
+                                        <>
+                                            <div className="md:col-span-2">
+                                                <h3 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
+                                                    Identity
+                                                    <div className="h-px bg-slate-100 flex-1"></div>
+                                                </h3>
                                             </div>
-                                        ) : (
-                                            <span className="text-slate-400 italic">Unknown User</span>
-                                        )}
-                                    </div>
-                                </div>
 
-                                <div className="md:col-span-2 flex flex-col gap-1.5">
-                                    <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Influencer ID</label>
-                                    <div className={`px-3 py-2 border rounded-lg text-sm flex justify-between items-center ${generatedId !== editingContractor.contractor_id ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-slate-100 border-slate-200 text-slate-500'
-                                        }`}>
-                                        <span>{generatedId}</span>
-                                        {generatedId !== editingContractor.contractor_id && (
-                                            <span className="text-xs font-semibold px-2 py-0.5 bg-amber-200 text-amber-800 rounded">UPDATED</span>
-                                        )}
-                                    </div>
-                                </div>
+                                            <div className="md:col-span-2 flex flex-col gap-1.5">
+                                                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Created By</label>
+                                                <div className="px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 text-slate-700">
+                                                    {editingContractor.created_by_user ? (
+                                                        <div className="flex flex-col">
+                                                            <span className="font-medium">{editingContractor.created_by_user.full_name}</span>
+                                                            <span className="text-xs text-slate-500">{editingContractor.created_by_user.user_id}</span>
+                                                        </div>
+                                                    ) : (
+                                                        <span className="text-slate-400 italic">Super Admin</span>
+                                                    )}
+                                                </div>
+                                            </div>
 
-                                <ModalSelect
-                                    label="Influencer Type"
-                                    required
-                                    value={formData.customer_type}
-                                    onChange={(e) => handleFieldChange('customer_type', e.target.value)}
-                                    options={customerTypes}
-                                    showDefaultOption={false}
-                                />
+                                            <div className="md:col-span-2 flex flex-col gap-1.5">
+                                                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Influencer ID</label>
+                                                <div className={`px-3 py-2 border rounded-lg text-sm flex justify-between items-center ${generatedId !== editingContractor.contractor_id ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-slate-100 border-slate-200 text-slate-500'
+                                                    }`}>
+                                                    <span>{generatedId || editingContractor.contractor_id}</span>
+                                                    {generatedId && generatedId !== editingContractor.contractor_id && (
+                                                        <span className="text-xs font-semibold px-2 py-0.5 bg-amber-200 text-amber-800 rounded">UPDATED</span>
+                                                    )}
+                                                </div>
+                                            </div>
 
-                                <ModalInput
-                                    label="Full Name"
-                                    required
-                                    value={formData.contractor_name}
-                                    onChange={(e) => handleFieldChange('contractor_name', e.target.value)}
-                                    placeholder="Enter full name"
-                                />
+                                            {editingContractor.status !== 'Pending' && (
+                                                <div className="md:col-span-2">
+                                                    <div className={`p-3 rounded-lg flex items-center gap-2 ${editingContractor.status === 'Approved' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'
+                                                        }`}>
+                                                        <span className="font-semibold">Status:</span>
+                                                        <span>{editingContractor.status}</span>
+                                                    </div>
+                                                </div>
+                                            )}
 
-                                {formData.customer_type === 'Contractor' && (
-                                    <ModalInput
-                                        label="Nickname"
-                                        value={formData.nickname}
-                                        onChange={(e) => handleFieldChange('nickname', e.target.value)}
-                                        placeholder="e.g. Raju"
-                                    />
-                                )}
+                                            <ModalSelect
+                                                label="Influencer Type"
+                                                required
+                                                value={formData.customer_type}
+                                                onChange={(e) => handleFieldChange('customer_type', e.target.value)}
+                                                options={customerTypes}
+                                                showDefaultOption={false}
+                                                disabled={isReadOnly}
+                                            />
 
-                                {/* Conditional Mistry Name */}
-                                {formData.customer_type === 'Mistry' && (
-                                    <div className="md:col-span-2">
-                                        <ModalInput
-                                            label="Mistry Name"
-                                            required
-                                            value={formData.mistry_name}
-                                            onChange={(e) => handleFieldChange('mistry_name', e.target.value)}
-                                            placeholder="Enter Mistri Name"
-                                        />
-                                    </div>
-                                )}
+                                            <ModalInput
+                                                label="Full Name"
+                                                required
+                                                value={formData.contractor_name}
+                                                onChange={(e) => handleFieldChange('contractor_name', e.target.value)}
+                                                placeholder="Enter full name"
+                                                readOnly={isReadOnly}
+                                            />
 
-                                {/* Contact & Location */}
-                                <div className="md:col-span-2 mt-2">
-                                    <h3 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
-                                        Contact & Location
-                                        <div className="h-px bg-slate-100 flex-1"></div>
-                                    </h3>
-                                </div>
+                                            {formData.customer_type === 'Contractor' && (
+                                                <ModalInput
+                                                    label="Nickname"
+                                                    value={formData.nickname}
+                                                    onChange={(e) => handleFieldChange('nickname', e.target.value)}
+                                                    placeholder="e.g. Raju"
+                                                    readOnly={isReadOnly}
+                                                />
+                                            )}
 
-                                <ModalInput
-                                    label="Phone Number"
-                                    required
-                                    type="tel"
-                                    value={formData.customer_phone}
-                                    onChange={(e) => {
-                                        const val = e.target.value.replace(/\D/g, '');
-                                        if (val.length <= 10) handleFieldChange('customer_phone', val);
-                                    }}
-                                    placeholder="9876543210"
-                                    error={phoneError}
-                                />
+                                            {/* Conditional Mistry Name */}
+                                            {formData.customer_type === 'Mistry' && (
+                                                <div className="md:col-span-2">
+                                                    <ModalInput
+                                                        label="Mistry Name"
+                                                        required
+                                                        value={formData.mistry_name}
+                                                        onChange={(e) => handleFieldChange('mistry_name', e.target.value)}
+                                                        placeholder="Enter Mistri Name"
+                                                        readOnly={isReadOnly}
+                                                    />
+                                                </div>
+                                            )}
 
-                                <div className="hidden md:block"></div> {/* Spacer */}
+                                            {/* Contact & Location */}
+                                            <div className="md:col-span-2 mt-2">
+                                                <h3 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
+                                                    Contact & Location
+                                                    <div className="h-px bg-slate-100 flex-1"></div>
+                                                </h3>
+                                            </div>
 
-                                <ModalSelect
-                                    label="State"
-                                    required
-                                    value={formData.state}
-                                    onChange={(e) => handleFieldChange('state', e.target.value)}
-                                    options={Object.keys(INDIAN_LOCATIONS)}
-                                />
+                                            <ModalInput
+                                                label="Phone Number"
+                                                required
+                                                type="tel"
+                                                value={formData.customer_phone}
+                                                onChange={(e) => {
+                                                    const val = e.target.value.replace(/\D/g, '');
+                                                    if (val.length <= 10) handleFieldChange('customer_phone', val);
+                                                }}
+                                                placeholder="9876543210"
+                                                error={phoneError}
+                                                readOnly={isReadOnly}
+                                            />
 
-                                <ModalSelect
-                                    label="City"
-                                    required
-                                    value={formData.city}
-                                    onChange={(e) => handleFieldChange('city', e.target.value)}
-                                    options={formData.state ? (INDIAN_LOCATIONS[formData.state] || []) : []}
-                                    disabled={!formData.state}
-                                />
+                                            <div className="hidden md:block"></div> {/* Spacer */}
+
+                                            <ModalSelect
+                                                label="State"
+                                                required
+                                                value={formData.state}
+                                                onChange={(e) => handleFieldChange('state', e.target.value)}
+                                                options={Object.keys(INDIAN_LOCATIONS)}
+                                                disabled={isReadOnly}
+                                            />
+
+                                            <ModalSelect
+                                                label="City"
+                                                required
+                                                value={formData.city}
+                                                onChange={(e) => handleFieldChange('city', e.target.value)}
+                                                options={formData.state ? (INDIAN_LOCATIONS[formData.state] || []) : []}
+                                                disabled={!formData.state || isReadOnly}
+                                            />
+                                        </>
+                                    );
+                                })()}
                             </div>
                         </div>
 
                         {/* Modal Footer */}
+                        {/* Modal Footer */}
                         <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-3">
-                            <button
-                                onClick={() => handleReject(editingContractor.contractor_id)}
-                                className="flex items-center gap-2 px-4 py-2 text-rose-600 hover:bg-rose-50 hover:text-rose-700 rounded-lg text-sm font-medium transition-colors border border-transparent hover:border-rose-200"
-                            >
-                                <XCircle size={18} />
-                                Reject
-                            </button>
-                            <div className="flex items-center gap-3">
-                                <button
-                                    onClick={closeApproveModal}
-                                    className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-lg text-sm font-medium transition-colors"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={handleSaveAndApprove}
-                                    disabled={isSaving}
-                                    className="flex items-center gap-2 px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium transition-colors shadow-sm disabled:opacity-70 disabled:cursor-not-allowed"
-                                >
-                                    {isSaving ? (
-                                        <>
-                                            <Loader2 size={16} className="animate-spin" />
-                                            Approving...
-                                        </>
+                            {editingContractor.status === 'Pending' || editingContractor.status === 'Rejected' ? (
+                                <>
+                                    {editingContractor.status === 'Pending' ? (
+                                        <button
+                                            onClick={() => handleReject(editingContractor.contractor_id)}
+                                            className="flex items-center gap-2 px-4 py-2 text-rose-600 hover:bg-rose-50 hover:text-rose-700 rounded-lg text-sm font-medium transition-colors border border-transparent hover:border-rose-200"
+                                        >
+                                            <XCircle size={18} />
+                                            Reject
+                                        </button>
                                     ) : (
-                                        <>
-                                            <CheckCircle size={16} />
-                                            Approve
-                                        </>
+                                        <div></div>
                                     )}
-                                </button>
-                            </div>
+                                    <div className="flex items-center gap-3 ml-auto">
+                                        <button
+                                            onClick={closeApproveModal}
+                                            className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-lg text-sm font-medium transition-colors"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            onClick={handleSaveAndApprove}
+                                            disabled={isSaving}
+                                            className="flex items-center gap-2 px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium transition-colors shadow-sm disabled:opacity-70 disabled:cursor-not-allowed"
+                                        >
+                                            {isSaving ? (
+                                                <>
+                                                    <Loader2 size={16} className="animate-spin" />
+                                                    {editingContractor.status === 'Rejected' ? 'Re-Approving...' : 'Approving...'}
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <CheckCircle size={16} />
+                                                    Approve
+                                                </>
+                                            )}
+                                        </button>
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="flex justify-end w-full">
+                                    <button
+                                        onClick={closeApproveModal}
+                                        className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-lg text-sm font-medium transition-colors"
+                                    >
+                                        Close
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
