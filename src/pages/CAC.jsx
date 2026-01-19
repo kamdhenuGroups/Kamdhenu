@@ -839,6 +839,7 @@ const CAC = () => {
                                             <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground z-10" />
                                             <SearchableInput
                                                 value={selectedContractorType}
+                                                readOnly={true}
                                                 onChange={(e) => {
                                                     setSelectedContractorType(e.target.value);
                                                     setSelectedContractorId(''); // Reset selection when type changes
@@ -848,7 +849,7 @@ const CAC = () => {
                                                     setSelectedContractorId('');
                                                 }}
                                                 options={availableContractorTypes}
-                                                className="pl-9"
+                                                className="pl-9 cursor-pointer"
                                                 placeholder="Select Type"
                                             />
                                         </div>
