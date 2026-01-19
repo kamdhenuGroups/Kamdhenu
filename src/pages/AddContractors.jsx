@@ -542,6 +542,7 @@ const AddContractors = () => {
                                         options={userOptions}
                                         placeholder="Search User..."
                                         required
+                                        readOnly
                                     />
                                 </InputGroup>
                             </div>
@@ -557,6 +558,7 @@ const AddContractors = () => {
                                     options={CUSTOMER_TYPES.filter(t => t !== 'Customer')}
                                     placeholder="Select Role"
                                     required
+                                    readOnly
                                 />
                             </InputGroup>
 
