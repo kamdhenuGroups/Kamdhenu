@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
     LayoutDashboard,
+    Search,
     Users,
     CheckCircle,
     XCircle,
@@ -71,6 +72,7 @@ const NewContractorApproval = () => {
     const [activeTab, setActiveTab] = useState('pending'); // 'pending' | 'history'
     const [contractors, setContractors] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [searchTerm, setSearchTerm] = useState('');
 
     // Filter State
     const [filters, setFilters] = useState({
@@ -111,9 +113,24 @@ const NewContractorApproval = () => {
             if (filters.customer_type.length > 0 && (!c.customer_type || !filters.customer_type.includes(c.customer_type))) return false;
             if (filters.city.length > 0 && (!c.city || !filters.city.includes(c.city))) return false;
             if (filters.status.length > 0 && (!c.status || !filters.status.includes(c.status))) return false;
+
+            if (searchTerm) {
+                const searchLower = searchTerm.toLowerCase();
+                const matchesSearch = (
+                    (c.contractor_name?.toLowerCase().includes(searchLower)) ||
+                    (c.contractor_id?.toLowerCase().includes(searchLower)) ||
+                    (String(c.customer_phone || '').includes(searchTerm)) || // Phone is usually numeric, but string match works
+                    (c.city?.toLowerCase().includes(searchLower)) ||
+                    (c.state?.toLowerCase().includes(searchLower)) ||
+                    (c.customer_type?.toLowerCase().includes(searchLower)) ||
+                    (c.created_by_user?.full_name?.toLowerCase().includes(searchLower))
+                );
+                if (!matchesSearch) return false;
+            }
+
             return true;
         });
-    }, [contractors, filters]);
+    }, [contractors, filters, searchTerm]);
 
     // Pagination State
     const [currentPage, setCurrentPage] = useState(1);
@@ -440,6 +457,23 @@ const NewContractorApproval = () => {
                     <LayoutDashboard size={18} />
                     Refresh
                 </button>
+            </div>
+
+            {/* Search and Filters Bar */}
+            <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+                {/* Search */}
+                <div className="relative w-full sm:max-w-md">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <Search size={18} className="text-slate-400" />
+                    </div>
+                    <input
+                        type="text"
+                        placeholder="Search by Name, ID, Phone, City..."
+                        className="block w-full pl-10 pr-3 py-2 border border-slate-200 rounded-lg leading-5 bg-slate-50 placeholder-slate-400 focus:outline-none focus:bg-white focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm transition duration-150 ease-in-out"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                </div>
             </div>
 
             {/* Tabs */}

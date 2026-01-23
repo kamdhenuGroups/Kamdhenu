@@ -428,8 +428,20 @@ const Settings = () => {
 
             {activeTab === 'Manage Users' && (
                 <div className="flex flex-col gap-4">
-                    <div className="flex flex-col md:flex-row md:items-center justify-end gap-4 shrink-0 mb-2">
-                        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 shrink-0 mb-2">
+                        {/* Search Bar */}
+                        <div className="relative w-full md:w-72 order-2 md:order-1">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                            <input
+                                type="text"
+                                placeholder="Search users..."
+                                className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm"
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                            />
+                        </div>
+
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 order-1 md:order-2">
                             <div className="hidden xl:flex items-center gap-6">
                                 <StatItem label="Total Users" value={users.length} />
                                 <div className="w-px h-8 bg-slate-200"></div>

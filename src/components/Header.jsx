@@ -50,12 +50,8 @@ const Header = ({ children }) => {
 
         // 3. Fetch System Notifications (e.g. Requests for more leaves)
         if (isAdmin) {
-          const { data: systemNotifs } = await supabase
-            .from('notifications')
-            .select('*')
-            // You might want to filter by recipient_role or similar if valid
-            .order('created_at', { ascending: false })
-            .limit(20);
+          // Notifications table missing, disabling fetch for now
+          const systemNotifs = [];
 
           systemNotifs?.forEach(item => {
             const uniqueId = `sys-${item.id}`;
