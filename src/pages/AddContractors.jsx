@@ -385,10 +385,10 @@ const AddContractors = () => {
         setLoading(true);
 
         try {
-            // Check Name Uniqueness (Case Sensitive)
-            const { exists: nameExists } = await addContractorService.checkContractorNameUnique(contractorName);
-            if (nameExists) {
-                toast.error('This Contractor Name already exists.');
+            // Check Phone Uniqueness (Final verification)
+            const { exists: phoneExists } = await addContractorService.checkPhoneUnique(customerPhone);
+            if (phoneExists) {
+                toast.error('Phone number is already available.');
                 setLoading(false);
                 return;
             }
@@ -419,7 +419,7 @@ const AddContractors = () => {
 
             if (error) {
                 if (error.code === '23505') { // Unique violation
-                    toast.error('A contractor with this ID or Nickname already exists.');
+                    toast.error('This Phone Number or ID is already registered.');
                 } else {
                     throw error;
                 }

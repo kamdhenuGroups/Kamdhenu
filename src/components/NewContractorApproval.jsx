@@ -331,6 +331,17 @@ const NewContractorApproval = () => {
             return;
         }
 
+        // Final Phone Check
+        const { exists: phoneExists } = await addContractorService.checkPhoneUnique(
+            formData.customer_phone,
+            editingContractor.contractor_id
+        );
+
+        if (phoneExists) {
+            toast.error('Phone number already exists with another user');
+            return;
+        }
+
         setIsSaving(true);
         const loadingToast = toast.loading('Updating and Approving...');
 
