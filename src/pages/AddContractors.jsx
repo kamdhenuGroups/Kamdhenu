@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { INDIAN_LOCATIONS } from '../data/indianLocations';
-import { CUSTOMER_TYPES, idGenerator } from '../services/orderService';
+import { CUSTOMER_TYPES, idGenerator, orderService } from '../services/orderService';
 import { addContractorService } from '../services/addContractorService';
 import useAuthStore from '../store/authStore';
 
@@ -110,7 +110,9 @@ const SearchableInput = ({ options = [], onSelect, ...props }) => {
         // This allows users to change selection without clearing the input first
         const isExactMatch = options.some(opt => {
             const label = typeof opt === 'string' ? opt : opt.label;
-            return label.toLowerCase() === normalizedSearch;
+            const value = typeof opt === 'string' ? opt : opt.value;
+            return label.toLowerCase() === normalizedSearch ||
+                (value && value.toString().toLowerCase() === normalizedSearch);
         });
 
         if (isExactMatch) return options;
@@ -218,7 +220,9 @@ const AddContractors = () => {
     const [customerPhone, setCustomerPhone] = useState('');
     const [customerType, setCustomerType] = useState('');
     const [nickname, setNickname] = useState('');
-    const [mistryName, setMistryName] = useState('');
+    // const [mistryName, setMistryName] = useState(''); // Removed in favor of list
+    const [mistriList, setMistriList] = useState([{ name: '', phone: '', error: '' }]);
+    const [contractorsList, setContractorsList] = useState([]);
 
     // Location State
     const [selectedState, setSelectedState] = useState('');
@@ -263,9 +267,33 @@ const AddContractors = () => {
         }));
     }, [usersList]);
 
-    // Check Phone Uniqueness
+    // Fetch contractors for Mistry selection
+    useEffect(() => {
+        const fetchContractors = async () => {
+            const { data } = await orderService.getContractorData();
+            if (data) setContractorsList(data);
+        };
+        fetchContractors();
+    }, []);
+
+    const contractorOptions = useMemo(() => {
+        return contractorsList
+            .filter(c => c.customer_type === 'Contractor')
+            .map(c => ({
+                label: `${c.contractor_name} ${c.nickname ? `(${c.nickname})` : ''} - ${c.contractor_id || ''}`,
+                value: c.contractor_name,
+                nickname: c.nickname,
+                state: c.state,
+                city: c.city
+            }));
+    }, [contractorsList]);
+
+    // Check Phone Uniqueness & Validation
     useEffect(() => {
         const checkPhone = async () => {
+            // Only check single phone if NOT Mistry (Mistry checks are done on list changes or submit)
+            if (customerType === 'Mistry') return;
+
             if (customerPhone.length === 10) {
                 setIsCheckingPhone(true);
                 const { exists, error } = await addContractorService.checkPhoneUnique(customerPhone);
@@ -283,6 +311,9 @@ const AddContractors = () => {
                     setPhoneError('');
                     setIdError('');
                 }
+            } else if (customerPhone.length > 0) {
+                setPhoneError('Phone number must be exactly 10 digits.');
+                setIdError('');
             } else {
                 setPhoneError('');
                 setIdError('');
@@ -290,23 +321,29 @@ const AddContractors = () => {
         };
 
         const timeoutId = setTimeout(() => {
-            if (customerPhone) checkPhone();
+            checkPhone();
         }, 500);
 
         return () => clearTimeout(timeoutId);
-    }, [customerPhone]);
+    }, [customerPhone, customerType]);
 
     // Generate ID for preview
     const generatedId = useMemo(() => {
+        if (customerType === 'Mistry') {
+            if (mistriList.some(m => m.name && m.phone.length === 10)) {
+                return "Multiple (Auto-generated)";
+            }
+            return "Pending Details..."
+        }
         return idGenerator.generateCustomerId({
             customerPhone,
             cityCode,
             contractorName,
             customerType,
             nickname,
-            mistryName
+            mistryName: ''
         });
-    }, [customerPhone, cityCode, contractorName, customerType, nickname, mistryName]);
+    }, [customerPhone, cityCode, contractorName, customerType, nickname, mistriList]);
 
     // Check ID Uniqueness - REMOVED as per request, relied on Phone check
     // useEffect(() => {
@@ -350,109 +387,182 @@ const AddContractors = () => {
             toast.error('Please enter a name');
             return;
         }
-        if (!customerPhone || customerPhone.length < 10) {
-            toast.error('Please enter a valid phone number');
-            return;
+
+        if (customerType === 'Mistry') {
+            // Validate Mistry List
+            const validMistris = mistriList.filter(m => m.name && m.phone.length === 10);
+            if (validMistris.length === 0) {
+                toast.error('Please add at least one valid Mistri (Name & 10-digit Phone)');
+                return;
+            }
+            if (mistriList.some(m => m.error)) {
+                toast.error('Please resolve validation errors before submitting');
+                return;
+            }
+        } else {
+            if (!customerPhone || customerPhone.length < 10) {
+                toast.error('Please enter a valid phone number');
+                return;
+            }
+            let hasError = false;
+            if (phoneError) {
+                toast.error(phoneError);
+                hasError = true;
+            }
+            if (idError) {
+                toast.error(idError);
+                hasError = true;
+            }
+            if (hasError) return;
         }
-        let hasError = false;
-        if (phoneError) {
-            toast.error(phoneError);
-            hasError = true;
-        }
-        if (idError) {
-            toast.error(idError);
-            hasError = true;
-        }
-        if (hasError) return;
+
         if (isCheckingPhone || isCheckingId) {
             toast.error('Verifying details...');
             return;
         }
-        if (!selectedState || !selectedCity) {
+        if (customerType !== 'Mistry' && (!selectedState || !selectedCity)) {
             toast.error('Please select state and city');
             return;
         }
-        if (isAdmin && !selectedUserId) {
+        if (isAdmin && !selectedUserId && customerType !== 'Mistry') {
             toast.error('Please assign to a user');
-            return;
-        }
-
-        if (customerType === 'Mistry' && !mistryName) {
-            toast.error('Please enter a mistry name');
             return;
         }
 
         setLoading(true);
 
         try {
-            // Check Phone Uniqueness (Final verification)
-            const { exists: phoneExists } = await addContractorService.checkPhoneUnique(customerPhone);
-            if (phoneExists) {
-                toast.error('Phone number is already available.');
-                setLoading(false);
-                return;
-            }
-
-            // const { exists } = await addContractorService.checkIdUnique(generatedId);
-            // if (exists) {
-            //     toast.error('Contractor ID is already available');
-            //     setLoading(false);
-            //     return;
-            // }
-
             const status = isAdmin ? 'Approved' : 'Pending';
 
-            const contractorPayload = {
-                contractor_id: generatedId,
-                contractor_name: contractorName,
-                customer_phone: customerPhone.replace(/\D/g, ''), // Ensure numeric
-                nickname: nickname || null,
-                customer_type: customerType,
-                state: selectedState,
-                city: selectedCity,
-                mistry_name: mistryName || null,
-                status: status,
-                created_by_user_id: user?.user_id
-            };
+            if (customerType === 'Mistry') {
+                // Handle Multiple Mistris
+                const promises = mistriList.map(async (mistri) => {
+                    if (!mistri.name || mistri.phone.length !== 10) return null;
 
-            const { data, error } = await addContractorService.createContractor(contractorPayload);
+                    // Check Phone Uniqueness for each
+                    // Note: We already checked on input, but re-verifying here is safer to avoid race conditions
+                    const { exists } = await addContractorService.checkPhoneUnique(mistri.phone);
+                    if (exists) {
+                        // Update error state locally if needed, but toast is enough for submit failure
+                        throw new Error(`Phone ${mistri.phone} exists`);
+                    }
 
-            if (error) {
-                if (error.code === '23505') { // Unique violation
-                    toast.error('This Phone Number or ID is already registered.');
+                    // Generate ID on the fly
+                    // We need cityCode from the Contractor (Influencer). 
+                    // The Contractor selection gives us 'state' and 'city' in options logic, but we store them in selectedState/City?
+                    // Verify: onSelect set selectedState/City. 
+
+                    // Re-derive cityCode if needed or use state
+                    let currentCityCode = cityCode;
+                    if (!currentCityCode && selectedCity) {
+                        currentCityCode = idGenerator.getCityCode(selectedCity);
+                    }
+
+                    const tempId = idGenerator.generateCustomerId({
+                        customerPhone: mistri.phone,
+                        cityCode: currentCityCode,
+                        contractorName: contractorName,
+                        customerType,
+                        nickname: null,
+                        mistryName: mistri.name
+                    });
+
+                    const payload = {
+                        contractor_id: tempId,
+                        contractor_name: contractorName, // The Influencer
+                        customer_phone: mistri.phone.replace(/\D/g, ''),
+                        nickname: null,
+                        customer_type: customerType,
+                        state: selectedState,
+                        city: selectedCity,
+                        mistry_name: mistri.name,
+                        status: status,
+                        created_by_user_id: user?.user_id
+                    };
+
+                    return addContractorService.createContractor(payload);
+                });
+
+                const results = await Promise.all(promises);
+                // Check errors
+                const errors = results.filter(r => r && r.error);
+                if (errors.length > 0) {
+                    console.error(errors);
+                    toast.error('Some entries failed. Phone numbers might be duplicates.');
                 } else {
-                    throw error;
+                    toast.success('Mistris added successfully!');
+                    // Reset
+                    setMistriList([{ name: '', phone: '', error: '' }]);
+                    setContractorName(''); // Reset influencer selection too? Maybe keep it? 
+                    // The user probably wants to add more, but let's reset for safety.
+                    setContractorName('');
+                    setSelectedState('');
+                    setSelectedCity('');
                 }
+
             } else {
-                // Assign to user
-                // Assign to user ONLY if Approved
-                const targetUserId = isAdmin ? selectedUserId : user?.user_id;
-                if (targetUserId && status === 'Approved') {
-                    await addContractorService.assignContractorToUser(targetUserId, contractorPayload.contractor_id);
+                // Existing Single Add Logic (Contractor/Other)
+
+                // Check Phone Uniqueness (Final verification)
+                const { exists: phoneExists } = await addContractorService.checkPhoneUnique(customerPhone);
+                if (phoneExists) {
+                    toast.error('Phone number is already available.');
+                    setLoading(false);
+                    return;
                 }
 
-                if (status === 'Pending') {
-                    toast.success('Submitted for approval!');
+                const contractorPayload = {
+                    contractor_id: generatedId,
+                    contractor_name: contractorName,
+                    customer_phone: customerPhone.replace(/\D/g, ''), // Ensure numeric
+                    nickname: nickname || null,
+                    customer_type: customerType,
+                    state: selectedState,
+                    city: selectedCity,
+                    mistry_name: null, // No mistry name for non-mistry types
+                    status: status,
+                    created_by_user_id: user?.user_id
+                };
+
+                const { data, error } = await addContractorService.createContractor(contractorPayload);
+
+                if (error) {
+                    if (error.code === '23505') { // Unique violation
+                        toast.error('This Phone Number or ID is already registered.');
+                    } else {
+                        throw error;
+                    }
                 } else {
-                    toast.success('Contractor added successfully!');
-                }
+                    // Assign to user logic
+                    const targetUserId = isAdmin ? selectedUserId : user?.user_id;
+                    if (targetUserId && status === 'Approved') {
+                        await addContractorService.assignContractorToUser(targetUserId, contractorPayload.contractor_id);
+                    }
 
-                // Reset form
-                setContractorName('');
-                setCustomerPhone('');
-                setCustomerType('');
-                setNickname('');
-                setMistryName('');
-                setSelectedState('');
-                setSelectedCity('');
-                if (isAdmin) {
-                    setSelectedUserId('');
-                    setUserSearchText('');
+                    if (status === 'Pending') {
+                        toast.success('Submitted for approval!');
+                    } else {
+                        toast.success('Contractor added successfully!');
+                    }
+
+                    // Reset form
+                    setContractorName('');
+                    setCustomerPhone('');
+                    setCustomerType('');
+                    setNickname('');
+                    setSelectedState('');
+                    setSelectedCity('');
+                    if (isAdmin) {
+                        setSelectedUserId('');
+                        setUserSearchText('');
+                    }
                 }
             }
         } catch (error) {
             console.error(error);
-            toast.error('Failed to add contractor');
+            if (!error.message.includes('exists')) {
+                toast.error('Failed to add contractor');
+            }
         } finally {
             setLoading(false);
         }
@@ -463,7 +573,7 @@ const AddContractors = () => {
         setCustomerPhone('');
         setCustomerType('');
         setNickname('');
-        setMistryName('');
+        setMistryList([{ name: '', phone: '' }]);
         setSelectedState('');
         setSelectedCity('');
 
@@ -526,7 +636,7 @@ const AddContractors = () => {
                         {/* Section 1: Identity */}
                         <SectionHeader title="Identity & Role" icon={User} />
 
-                        {isAdmin && (
+                        {isAdmin && customerType !== 'Mistry' && (
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6 mb-6">
                                 <InputGroup label="Assign To User" required>
                                     <SearchableInput
@@ -564,108 +674,240 @@ const AddContractors = () => {
                             </InputGroup>
 
                             <InputGroup label="Influencer's Name" required>
-                                <TextInput
-                                    type="text"
-                                    value={contractorName}
-                                    onChange={(e) => setContractorName(e.target.value)}
-                                    placeholder="Enter full name"
-                                    required
-                                />
+                                {customerType === 'Mistry' ? (
+                                    <SearchableInput
+                                        name="contractorName"
+                                        value={contractorName}
+                                        onChange={(e) => setContractorName(e.target.value)}
+                                        onSelect={(opt) => {
+                                            setContractorName(opt.value);
+                                            if (opt.nickname) setNickname(opt.nickname);
+                                            if (opt.state) setSelectedState(opt.state);
+                                            if (opt.city) setSelectedCity(opt.city);
+                                        }}
+                                        options={contractorOptions}
+                                        placeholder="Select Contractor"
+                                        required
+                                    />
+                                ) : (
+                                    <TextInput
+                                        type="text"
+                                        value={contractorName}
+                                        onChange={(e) => setContractorName(e.target.value)}
+                                        placeholder="Enter full name"
+                                        required
+                                    />
+                                )}
                             </InputGroup>
                         </div>
 
                         {/* Additional Info (Conditional) */}
                         {(['Contractor', 'Mistry'].includes(customerType)) && (
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6 mb-4">
-                                <InputGroup label="Nickname">
-                                    <TextInput
-                                        type="text"
-                                        value={nickname}
-                                        onChange={(e) => setNickname(e.target.value)}
-                                        placeholder="e.g. Raju"
-                                    />
-                                </InputGroup>
-
-                                {customerType === 'Mistry' && (
-                                    <InputGroup label="Mistri Name" required>
+                                {customerType !== 'Mistry' && (
+                                    <InputGroup label="Nickname">
                                         <TextInput
                                             type="text"
-                                            value={mistryName}
-                                            onChange={(e) => setMistryName(e.target.value)}
-                                            placeholder="Partner's Name"
+                                            value={nickname}
+                                            onChange={(e) => setNickname(e.target.value)}
+                                            placeholder="e.g. Raju"
                                         />
                                     </InputGroup>
+                                )}
+
+                                {customerType === 'Mistry' && (
+                                    <div className="col-span-full space-y-4">
+                                        <div className="flex items-center justify-between">
+                                            <h4 className="text-sm font-semibold text-slate-700">Mistri Details</h4>
+                                            <button
+                                                type="button"
+                                                onClick={() => setMistriList([...mistriList, { name: '', phone: '', error: '' }])}
+                                                className="text-xs text-primary font-medium hover:underline"
+                                            >
+                                                + Add Another Mistri
+                                            </button>
+                                        </div>
+
+                                        {mistriList.map((mistri, index) => {
+                                            // Calculate ID for this specific Mistri
+                                            const mistriId = (mistri.name && mistri.phone.length === 10 && cityCode)
+                                                ? idGenerator.generateCustomerId({
+                                                    customerPhone: mistri.phone,
+                                                    cityCode: cityCode,
+                                                    contractorName: contractorName,
+                                                    customerType: 'Mistry',
+                                                    nickname: null,
+                                                    mistryName: mistri.name
+                                                })
+                                                : 'Pending Phone/Name...';
+
+                                            return (
+                                                <div key={index} className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start p-4 bg-slate-50 rounded-xl relative group">
+                                                    {mistriList.length > 1 && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setMistriList(mistriList.filter((_, i) => i !== index))}
+                                                            className="absolute -top-2 -right-2 bg-red-100 text-red-500 p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                                                        >
+                                                            <X size={12} />
+                                                        </button>
+                                                    )}
+
+                                                    <InputGroup label={`Generated ID ${index + 1}`} className="md:col-span-5">
+                                                        <div className="relative">
+                                                            <TextInput
+                                                                type="text"
+                                                                value={mistriId}
+                                                                readOnly
+                                                                className="bg-slate-100/50 text-slate-500 cursor-default"
+                                                            />
+                                                        </div>
+                                                    </InputGroup>
+
+                                                    <InputGroup label={`Mistri Name ${index + 1}`} required className="md:col-span-4">
+                                                        <TextInput
+                                                            type="text"
+                                                            value={mistri.name}
+                                                            onChange={(e) => {
+                                                                const newList = [...mistriList];
+                                                                newList[index].name = e.target.value;
+                                                                setMistriList(newList);
+                                                            }}
+                                                            placeholder="Partner's Name"
+                                                        />
+                                                    </InputGroup>
+
+                                                    <InputGroup label={`Phone ${index + 1}`} required className="md:col-span-3">
+                                                        <div className="relative">
+                                                            <TextInput
+                                                                type="tel"
+                                                                value={mistri.phone}
+                                                                onChange={async (e) => {
+                                                                    const val = e.target.value.replace(/\D/g, '');
+                                                                    if (val.length <= 10) {
+                                                                        const newList = [...mistriList];
+                                                                        newList[index].phone = val;
+
+                                                                        // Reset error on change
+                                                                        newList[index].error = '';
+
+                                                                        // Check duplicates within local list
+                                                                        const isDuplicateInList = newList.some((m, i) => m.phone === val && i !== index && val.length === 10);
+                                                                        if (isDuplicateInList) {
+                                                                            newList[index].error = 'Duplicate number in list';
+                                                                        }
+
+                                                                        setMistriList(newList);
+
+                                                                        // Async check unique DB
+                                                                        if (val.length === 10 && !isDuplicateInList) {
+                                                                            const { exists } = await addContractorService.checkPhoneUnique(val);
+                                                                            if (exists) {
+                                                                                // Update state again to show error
+                                                                                setMistriList(currentList => {
+                                                                                    const updated = [...currentList];
+                                                                                    // Ensure we are updating the correct index and value hasn't changed drastically race-condition wise
+                                                                                    if (updated[index].phone === val) {
+                                                                                        updated[index].error = 'Already registered';
+                                                                                    }
+                                                                                    return updated;
+                                                                                });
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }}
+                                                                placeholder="Phone No."
+                                                                maxLength={10}
+                                                                className={mistri.error ? "border-destructive focus-visible:ring-destructive" : ""}
+                                                            />
+                                                        </div>
+                                                        {mistri.error && (
+                                                            <p className="text-xs text-destructive font-medium mt-1 ml-1">{mistri.error}</p>
+                                                        )}
+                                                    </InputGroup>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
                                 )}
                             </div>
                         )}
 
                         {/* Section 2: Contact */}
-                        <SectionHeader title="Contact Information" icon={Phone} />
+                        {customerType !== 'Mistry' && (
+                            <>
+                                <SectionHeader title="Contact Information" icon={Phone} />
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6 mb-4">
-                            <InputGroup label="Primary Phone" required>
-                                <div className="relative">
-                                    <TextInput
-                                        type="tel"
-                                        value={customerPhone}
-                                        onChange={(e) => {
-                                            const val = e.target.value.replace(/\D/g, '');
-                                            if (val.length <= 10) setCustomerPhone(val);
-                                        }}
-                                        placeholder="9876543210"
-                                        maxLength={10}
-                                        required
-                                        className={phoneError ? "border-destructive focus-visible:ring-destructive pr-10" : ""}
-                                    />
-                                    {isCheckingPhone && (
-                                        <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                                            <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6 mb-4">
+                                    <InputGroup label="Primary Phone" required>
+                                        <div className="relative">
+                                            <TextInput
+                                                type="tel"
+                                                value={customerPhone}
+                                                onChange={(e) => {
+                                                    const val = e.target.value.replace(/\D/g, '');
+                                                    if (val.length <= 10) setCustomerPhone(val);
+                                                }}
+                                                placeholder="9876543210"
+                                                maxLength={10}
+                                                required
+                                                className={phoneError ? "border-destructive focus-visible:ring-destructive pr-10" : ""}
+                                            />
+                                            {isCheckingPhone && (
+                                                <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                                                    <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                                                </div>
+                                            )}
                                         </div>
-                                    )}
+                                        {phoneError && (
+                                            <p className="text-xs text-destructive font-medium mt-1 ml-1">{phoneError}</p>
+                                        )}
+                                    </InputGroup>
                                 </div>
-                                {phoneError && (
-                                    <p className="text-xs text-destructive font-medium mt-1 ml-1">{phoneError}</p>
-                                )}
-                            </InputGroup>
-                        </div>
+                            </>
+                        )}
 
                         {/* Section 3: Region */}
-                        <SectionHeader title="Regional Details" icon={MapPin} />
+                        {customerType !== 'Mistry' && (
+                            <>
+                                <SectionHeader title="Regional Details" icon={MapPin} />
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6 mb-4">
-                            <InputGroup label="State" required>
-                                <SearchableInput
-                                    name="state"
-                                    value={selectedState}
-                                    onChange={(e) => {
-                                        setSelectedState(e.target.value);
-                                        setSelectedCity(''); // Reset city when state changes
-                                    }}
-                                    onSelect={(val) => {
-                                        setSelectedState(val);
-                                        setSelectedCity('');
-                                    }}
-                                    options={states}
-                                    placeholder="Select State"
-                                    required
-                                    readOnly
-                                />
-                            </InputGroup>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6 mb-4">
+                                    <InputGroup label="State" required>
+                                        <SearchableInput
+                                            name="state"
+                                            value={selectedState}
+                                            onChange={(e) => {
+                                                setSelectedState(e.target.value);
+                                                setSelectedCity(''); // Reset city when state changes
+                                            }}
+                                            onSelect={(val) => {
+                                                setSelectedState(val);
+                                                setSelectedCity('');
+                                            }}
+                                            options={states}
+                                            placeholder="Select State"
+                                            required
+                                            readOnly
+                                        />
+                                    </InputGroup>
 
-                            <InputGroup label="City" required>
-                                <SearchableInput
-                                    name="city"
-                                    value={selectedCity}
-                                    onChange={(e) => setSelectedCity(e.target.value)}
-                                    onSelect={(val) => setSelectedCity(val)}
-                                    options={selectedState ? (INDIAN_LOCATIONS[selectedState] || []) : []}
-                                    placeholder="Select City"
-                                    required
-                                    disabled={!selectedState}
-                                    readOnly
-                                />
-                            </InputGroup>
-                        </div>
+                                    <InputGroup label="City" required>
+                                        <SearchableInput
+                                            name="city"
+                                            value={selectedCity}
+                                            onChange={(e) => setSelectedCity(e.target.value)}
+                                            onSelect={(val) => setSelectedCity(val)}
+                                            options={selectedState ? (INDIAN_LOCATIONS[selectedState] || []) : []}
+                                            placeholder="Select City"
+                                            required
+                                            disabled={!selectedState}
+                                            readOnly
+                                        />
+                                    </InputGroup>
+                                </div>
+                            </>
+                        )}
 
                         {/* Action Bar */}
                         <div className="mt-12 pt-6 border-t border-border flex items-center justify-end gap-4">

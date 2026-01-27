@@ -258,14 +258,14 @@ const InfluencerDashboardPage = () => {
                     </div>
 
                     <div className="overflow-x-auto">
-                        <table className="w-full text-left border-collapse">
+                        <table className="w-full min-w-[1000px] text-left border-collapse">
                             <thead>
                                 <tr className="bg-slate-50/80 border-b border-slate-100 text-slate-500 text-xs font-semibold uppercase tracking-wider">
-                                    <th className="px-6 py-4 whitespace-nowrap w-24">ID</th>
-                                    <th className="px-6 py-4 w-64">Name</th>
-                                    <th className="px-6 py-4 w-40">Phone</th>
-                                    <th className="px-6 py-4 w-40">Type</th>
-                                    <th className="px-6 py-4 w-auto">Location</th>
+                                    <th className="px-6 py-4 whitespace-nowrap w-32">ID</th>
+                                    <th className="px-6 py-4 min-w-[250px]">Name</th>
+                                    <th className="px-6 py-4 min-w-[150px]">Phone</th>
+                                    <th className="px-6 py-4 min-w-[150px]">Type</th>
+                                    <th className="px-6 py-4 min-w-[200px]">Location</th>
                                 </tr>
                             </thead>
                             <tbody className="text-sm divide-y divide-slate-50">
@@ -305,21 +305,21 @@ const InfluencerDashboardPage = () => {
                                                     {influencer.contractor_id}
                                                 </span>
                                             </td>
-                                            <td className="px-6 py-4">
-                                                <span className="font-medium text-slate-900">{influencer.contractor_name || '-'}</span>
+                                            <td className="px-6 py-4 whitespace-nowrap font-medium text-slate-900" title={influencer.contractor_name}>
+                                                {influencer.contractor_name || '-'}
                                             </td>
-                                            <td className="px-6 py-4 text-slate-600">
+                                            <td className="px-6 py-4 text-slate-600 whitespace-nowrap">
                                                 {influencer.customer_phone || '-'}
                                             </td>
-                                            <td className="px-6 py-4">
+                                            <td className="px-6 py-4 whitespace-nowrap">
                                                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-100">
                                                     {influencer.customer_type || '-'}
                                                 </span>
                                             </td>
-                                            <td className="px-6 py-4 text-slate-600">
-                                                <div className="flex items-center gap-1.5 max-w-[180px]">
+                                            <td className="px-6 py-4 text-slate-600 whitespace-nowrap">
+                                                <div className="flex items-center gap-1.5 w-full">
                                                     <MapPin size={14} className="text-slate-400 flex-shrink-0" />
-                                                    <span className="truncate" title={`${influencer.city || ''}, ${influencer.state || ''}`}>
+                                                    <span title={`${influencer.city || ''}, ${influencer.state || ''}`}>
                                                         {influencer.city || '-'}{influencer.city && influencer.state ? ', ' : ''}{influencer.state || '-'}
                                                     </span>
                                                 </div>
