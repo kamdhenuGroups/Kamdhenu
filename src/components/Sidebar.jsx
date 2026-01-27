@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import useAuthStore from '../store/authStore';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../supabase';
 import {
 
@@ -28,6 +28,11 @@ const Sidebar = ({ onClose }) => {
   const navigate = useNavigate();
   const { user } = useAuthStore();
   const [isOpen, setIsOpen] = useState(false);
+  const [expandedMenus, setExpandedMenus] = useState({});
+
+  const toggleMenu = (label) => {
+    setExpandedMenus(prev => ({ ...prev, [label]: !prev[label] }));
+  };
 
   useEffect(() => {
     if (!user?.user_id) return;
@@ -87,7 +92,18 @@ const Sidebar = ({ onClose }) => {
 
   /* Combined Master Menu List for Permission Checking */
   const MASTER_MENU_ITEMS = [
-    { path: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', id: 'dashboard' },
+    {
+      path: '/dashboard',
+      icon: LayoutDashboard,
+      label: 'Dashboard',
+      id: 'dashboard',
+      type: 'dropdown',
+      items: [
+        { path: '/dashboard?tab=order', label: 'Order Dashboard', id: 'dashboard_order' },
+        { path: '/dashboard?tab=site', label: 'Site Dashboard', id: 'dashboard_site' },
+      ]
+    },
+    { path: '/influencer-dashboard', icon: Users, label: 'Influencer Dashboard', id: 'influencer-dashboard' },
     { path: '/new-order', icon: ShoppingCart, label: 'New Order', id: 'new-order' },
     { path: '/create-order', icon: ShoppingBag, label: 'Create Order', id: 'create-order' },
     { path: '/add-customers', icon: UserPlus, label: 'Add Customers', id: 'add-customers' },
@@ -106,6 +122,19 @@ const Sidebar = ({ onClose }) => {
     if (!user?.page_access || !Array.isArray(user?.page_access)) {
       const DEFAULT_ACCESS = ['my-profile'];
       return DEFAULT_ACCESS.includes(pageId);
+    }
+
+    // Legacy 'dashboard' permission grants access to all dashboard sub-items
+    if (user.page_access.includes('dashboard') && pageId.startsWith('dashboard')) {
+      return true;
+    }
+
+
+
+    // Special check for parent dashboard item: if legacy access OR any granular access
+    if (pageId === 'dashboard') {
+      if (user.page_access.includes('dashboard')) return true;
+      // If checking parent, it's enough to match one child (handled by baseMenuItems filter really, but good to be explicit)
     }
 
     return user.page_access.includes(pageId);
@@ -129,7 +158,16 @@ const Sidebar = ({ onClose }) => {
     return acc;
   }, []);
 
-  const menuItems = baseMenuItems;
+  const menuItems = baseMenuItems.map(item => {
+    if (item.type === 'dropdown') {
+      return {
+        ...item,
+        isOpen: !!expandedMenus[item.label],
+        toggle: () => toggleMenu(item.label)
+      };
+    }
+    return item;
+  });
 
 
   return (
@@ -197,131 +235,136 @@ const Sidebar = ({ onClose }) => {
 };
 
 // Extracted SidebarContent to prevent re-renders
-const SidebarContent = ({ menuItems, onClose, isCollapsed = false, user, handleLogout, isMobile = false }) => (
-  <div className={`flex flex-col h-full ${isCollapsed ? 'w-20' : 'w-[85vw] max-w-[280px] lg:w-72'} bg-sidebar text-sidebar-foreground transition-all duration-300 ${!isMobile ? 'border-r border-sidebar-border' : ''} ${isMobile ? 'shadow-2xl' : ''}`}>
+const SidebarContent = ({ menuItems, onClose, isCollapsed = false, user, handleLogout, isMobile = false }) => {
+  const location = useLocation();
 
-    {/* Header */}
-    <div className={`flex items-center justify-between px-6 py-8 ${isCollapsed ? 'justify-center' : ''}`}>
-      {!isCollapsed && (
-        <div className="flex items-center gap-3 w-full">
-          <div className="flex items-center justify-center w-12 h-12">
-            <img src="/logo.png" alt="Kamdhenu" className="w-full h-full object-contain" />
-          </div>
-          <div className="flex flex-col">
-            <span className="text-lg font-bold text-sidebar-foreground tracking-tight leading-none">
-              Kamdhenu Groups
-            </span>
-            <span className="text-[10px] uppercase tracking-wider text-sidebar-foreground/60 font-semibold mt-0.5">
-              CRM
-            </span>
-          </div>
-        </div>
-      )}
-      {onClose && (
-        <button
-          onClick={onClose}
-          className="p-2 -mr-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors ml-auto"
-        >
-          <X className="h-5 w-5" />
-        </button>
-      )}
-    </div>
+  return (
+    <div className={`flex flex-col h-full ${isCollapsed ? 'w-20' : 'w-[85vw] max-w-[280px] lg:w-72'} bg-sidebar text-sidebar-foreground transition-all duration-300 ${!isMobile ? 'border-r border-sidebar-border' : ''} ${isMobile ? 'shadow-2xl' : ''}`}>
 
-    {/* Menu */}
-    <nav className="flex-1 px-4 space-y-2 overflow-y-auto scrollbar-hide py-2">
-      {menuItems.map((item) => {
-        if (item.type === 'dropdown') {
-          return (
-            <div key={item.label} className="mb-1">
-              <button
-                onClick={item.toggle}
-                className={`flex items-center justify-between w-full py-3 px-3 rounded-xl transition-all duration-200 group ${item.isOpen
-                  ? 'bg-sidebar-accent text-sidebar-primary font-medium'
-                  : 'text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
-                  }`}
-              >
-                <div className="flex items-center gap-3">
-                  <item.icon className={`transition-colors ${item.isOpen ? 'text-sidebar-primary' : 'text-sidebar-foreground/60 group-hover:text-sidebar-foreground'}`} size={20} />
-                  {!isCollapsed && <span className="font-medium text-sm">{item.label}</span>}
-                </div>
-                {!isCollapsed && (item.isOpen ? <ChevronUp size={14} className="text-sidebar-primary" /> : <ChevronDown size={14} className="text-sidebar-foreground/40 group-hover:text-sidebar-foreground" />)}
-              </button>
-
-              {
-                item.isOpen && !isCollapsed && (
-                  <div className="ml-5 mt-1 space-y-1 pl-4 border-l border-slate-100">
-                    {item.items.map((subItem) => (
-                      <NavLink
-                        key={subItem.path}
-                        to={subItem.path}
-                        className={({ isActive }) =>
-                          `flex items-center py-2.5 px-3 rounded-lg transition-all duration-200 text-sm ${isActive
-                            ? 'text-sidebar-primary font-medium bg-sidebar-accent/50'
-                            : 'text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/50'
-                          }`
-                        }
-                        onClick={() => {
-                          onClose?.();
-                        }}
-                      >
-                        <span className="font-medium">{subItem.label}</span>
-                      </NavLink>
-                    ))}
-                  </div>
-                )
-              }
-            </div>
-          );
-        }
-
-        return (
-          <NavLink
-            key={item.path}
-            to={item.path}
-            className={({ isActive }) =>
-              `flex items-center py-3 px-3 rounded-xl transition-all duration-200 mb-1 group ${isActive
-                ? 'bg-sidebar-accent text-sidebar-primary font-medium shadow-sm shadow-sidebar-accent/20'
-                : 'text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
-              }`
-            }
-            onClick={() => {
-              onClose?.();
-            }}
-          >
-            <item.icon className={`transition-colors ${isCollapsed ? 'mx-auto' : 'mr-3'} ${({ isActive }) => isActive ? 'text-sidebar-primary' : 'text-sidebar-foreground/60 group-hover:text-sidebar-foreground'}`} size={20} />
-            {!isCollapsed && <span className="font-medium text-sm">{item.label}</span>}
-          </NavLink>
-        );
-      })}
-    </nav >
-
-    {/* Footer - Always visible */}
-    <div className="p-4 mt-auto">
-      <div className={`flex items-center gap-3 p-3 rounded-2xl ${isCollapsed ? 'justify-center' : 'bg-sidebar-accent/30 border border-sidebar-border/50'}`}>
-        <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center shrink-0 border border-sidebar-border text-sidebar-primary shadow-sm">
-          <User size={20} />
-        </div>
+      {/* Header */}
+      <div className={`flex items-center justify-between px-6 py-8 ${isCollapsed ? 'justify-center' : ''}`}>
         {!isCollapsed && (
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-sidebar-foreground truncate">{user?.Name || user?.Username || 'Guest'}</p>
-            <p className="text-xs text-sidebar-foreground/60 truncate capitalize">{user?.Admin === 'Yes' ? 'Administrator' : 'Employee'}</p>
+          <div className="flex items-center gap-3 w-full">
+            <div className="flex items-center justify-center w-12 h-12">
+              <img src="/logo.png" alt="Kamdhenu" className="w-full h-full object-contain" />
+            </div>
+            <div className="flex flex-col">
+              <span className="text-lg font-bold text-sidebar-foreground tracking-tight leading-none">
+                Kamdhenu Groups
+              </span>
+              <span className="text-[10px] uppercase tracking-wider text-sidebar-foreground/60 font-semibold mt-0.5">
+                CRM
+              </span>
+            </div>
           </div>
         )}
-        {!isCollapsed && (
+        {onClose && (
           <button
-            onClick={() => {
-              handleLogout();
-              onClose?.();
-            }}
-            className="p-2 rounded-lg text-sidebar-foreground/40 hover:text-destructive hover:bg-destructive/10 transition-colors"
-            title="Logout"
+            onClick={onClose}
+            className="p-2 -mr-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors ml-auto"
           >
-            <LogOutIcon size={18} />
+            <X className="h-5 w-5" />
           </button>
         )}
       </div>
+
+      {/* Menu */}
+      <nav className="flex-1 px-4 space-y-2 overflow-y-auto scrollbar-hide py-2">
+        {menuItems.map((item) => {
+          if (item.type === 'dropdown') {
+            return (
+              <div key={item.label} className="mb-1">
+                <button
+                  onClick={item.toggle}
+                  className={`flex items-center justify-between w-full py-3 px-3 rounded-xl transition-all duration-200 group ${item.isOpen
+                    ? 'bg-sidebar-accent text-sidebar-primary font-medium'
+                    : 'text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
+                    }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <item.icon className={`transition-colors ${item.isOpen ? 'text-sidebar-primary' : 'text-sidebar-foreground/60 group-hover:text-sidebar-foreground'}`} size={20} />
+                    {!isCollapsed && <span className="font-medium text-sm">{item.label}</span>}
+                  </div>
+                  {!isCollapsed && (item.isOpen ? <ChevronUp size={14} className="text-sidebar-primary" /> : <ChevronDown size={14} className="text-sidebar-foreground/40 group-hover:text-sidebar-foreground" />)}
+                </button>
+
+                {
+                  item.isOpen && !isCollapsed && (
+                    <div className="ml-5 mt-1 space-y-1 pl-4 border-l border-slate-100">
+                      {item.items.map((subItem) => (
+                        <NavLink
+                          key={subItem.path}
+                          to={subItem.path}
+                          className={() => {
+                            const isActive = location.pathname + location.search === subItem.path;
+                            return `flex items-center py-2.5 px-3 rounded-lg transition-all duration-200 text-sm ${isActive
+                              ? 'text-sidebar-primary font-medium bg-sidebar-accent/50'
+                              : 'text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/50'
+                              }`;
+                          }}
+                          onClick={() => {
+                            onClose?.();
+                          }}
+                        >
+                          <span className="font-medium">{subItem.label}</span>
+                        </NavLink>
+                      ))}
+                    </div>
+                  )
+                }
+              </div>
+            );
+          }
+
+          return (
+            <NavLink
+              key={item.path}
+              to={item.path}
+              className={({ isActive }) =>
+                `flex items-center py-3 px-3 rounded-xl transition-all duration-200 mb-1 group ${isActive
+                  ? 'bg-sidebar-accent text-sidebar-primary font-medium shadow-sm shadow-sidebar-accent/20'
+                  : 'text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground'
+                }`
+              }
+              onClick={() => {
+                onClose?.();
+              }}
+            >
+              <item.icon className={`transition-colors ${isCollapsed ? 'mx-auto' : 'mr-3'} ${({ isActive }) => isActive ? 'text-sidebar-primary' : 'text-sidebar-foreground/60 group-hover:text-sidebar-foreground'}`} size={20} />
+              {!isCollapsed && <span className="font-medium text-sm">{item.label}</span>}
+            </NavLink>
+          );
+        })}
+      </nav >
+
+      {/* Footer - Always visible */}
+      <div className="p-4 mt-auto">
+        <div className={`flex items-center gap-3 p-3 rounded-2xl ${isCollapsed ? 'justify-center' : 'bg-sidebar-accent/30 border border-sidebar-border/50'}`}>
+          <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center shrink-0 border border-sidebar-border text-sidebar-primary shadow-sm">
+            <User size={20} />
+          </div>
+          {!isCollapsed && (
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-sidebar-foreground truncate">{user?.Name || user?.Username || 'Guest'}</p>
+              <p className="text-xs text-sidebar-foreground/60 truncate capitalize">{user?.Admin === 'Yes' ? 'Administrator' : 'Employee'}</p>
+            </div>
+          )}
+          {!isCollapsed && (
+            <button
+              onClick={() => {
+                handleLogout();
+                onClose?.();
+              }}
+              className="p-2 rounded-lg text-sidebar-foreground/40 hover:text-destructive hover:bg-destructive/10 transition-colors"
+              title="Logout"
+            >
+              <LogOutIcon size={18} />
+            </button>
+          )}
+        </div>
+      </div >
     </div >
-  </div >
-);
+  );
+};
 
 export default Sidebar;

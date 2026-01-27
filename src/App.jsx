@@ -9,6 +9,7 @@ import Settings from './pages/Settings';
 import NewOrder from './pages/NewOrder';
 import Leads from './pages/Leads';
 import Dashboard from './pages/Dashboard';
+import InfluencerDashboardPage from './pages/InfluencerDashboardPage';
 import CRM from './pages/CRM';
 import OrderDetails from './pages/OrderDetails';
 import AddCustomers from './pages/AddCustomers';
@@ -40,6 +41,7 @@ function App() {
             <Route path="new-order" element={<NewOrder />} />
             <Route path="leads" element={<Leads />} />
             <Route path="dashboard" element={<Dashboard />} />
+            <Route path="influencer-dashboard" element={<InfluencerDashboardPage />} />
             <Route path="crm" element={<CRM />} />
             <Route path="order-details" element={<OrderDetails />} />
             <Route path="add-customers" element={<AddCustomers />} />

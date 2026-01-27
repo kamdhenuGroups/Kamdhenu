@@ -29,11 +29,19 @@ const ALL_PAGES = [
     { id: 'leads', label: 'Leads' },
     { id: 'crm', label: 'CRM' },
     { id: 'order-details', label: 'Order Details' },
-    { id: 'dashboard', label: 'Dashboard' },
+    { id: 'order-details', label: 'Order Details' },
+    // { id: 'dashboard', label: 'Dashboard' }, // Replaced by granular permissions
+
     { id: 'add-customers', label: 'Add Customers' },
     { id: 'cac', label: 'CAC' },
     { id: 'add-sites', label: 'Add Sites' },
     { id: 'add-contractors', label: 'Add Contractors' },
+    { id: 'influencer-dashboard', label: 'Influencer Dashboard' },
+];
+
+const DASHBOARD_PAGES = [
+    { id: 'dashboard_order', label: 'Order Dashboard' },
+    { id: 'dashboard_site', label: 'Site Dashboard' },
 ];
 
 const DEFAULT_USER_PAGES = ['my-profile'];
@@ -119,12 +127,24 @@ const Settings = () => {
     const handleOpenModal = (user = null) => {
         if (user) {
             setEditingUser(user);
+
+            // SPECIAL LOGIC: Migrate legacy 'dashboard' permission to granular permissions
+            // This ensures that unchecking specific dashboard items actually works
+            let accessList = user.page_access || DEFAULT_USER_PAGES;
+            if (accessList.includes('dashboard')) {
+                // Remove 'dashboard' and add all specific dashboard pages
+                const granularPages = DASHBOARD_PAGES.map(p => p.id);
+                accessList = accessList.filter(p => p !== 'dashboard');
+                // Combine and remove duplicates
+                accessList = [...new Set([...accessList, ...granularPages])];
+            }
+
             setFormData({
                 ...DEFAULT_FORM_DATA, // ensure structure
                 ...user,
                 password: user.password || '',
                 role: user.role || 'RM',
-                page_access: user.page_access || DEFAULT_USER_PAGES,
+                page_access: accessList,
                 profile_picture: user.profile_picture || '',
                 // Ensure nulls are empty strings for inputs
                 designation: user.designation || '',
@@ -176,7 +196,7 @@ const Settings = () => {
 
             // Auto-set admin pages
             if (name === 'role' && (newValue === 'admin' || newValue === 'Admin')) {
-                newState.page_access = ALL_PAGES.map(p => p.id);
+                newState.page_access = [...ALL_PAGES.map(p => p.id), ...DASHBOARD_PAGES.map(p => p.id)];
             }
             return newState;
         });
@@ -336,6 +356,14 @@ const Settings = () => {
             const userData = { ...cleanedData };
             if (!userData.date_of_birth) userData.date_of_birth = null;
             if (editingUser && !userData.password) delete userData.password;
+
+            if (!userData.date_of_birth) userData.date_of_birth = null;
+            if (editingUser && !userData.password) delete userData.password;
+
+            // Final safety check: ensure legacy 'dashboard' is NOT in the array
+            if (userData.page_access && userData.page_access.includes('dashboard')) {
+                userData.page_access = userData.page_access.filter(p => p !== 'dashboard');
+            }
 
             if (editingUser) {
                 const { error } = await supabase
@@ -662,7 +690,7 @@ const Settings = () => {
                                             <div className="flex items-center gap-2 mb-2">
                                                 <label className="block text-sm font-medium text-slate-700">Page Access</label>
                                                 <div className="flex gap-2 text-xs">
-                                                    <button type="button" onClick={() => setFormData(prev => ({ ...prev, page_access: ALL_PAGES.map(p => p.id) }))} className="text-primary hover:underline">Select All</button>
+                                                    <button type="button" onClick={() => setFormData(prev => ({ ...prev, page_access: [...ALL_PAGES.map(p => p.id), ...DASHBOARD_PAGES.map(p => p.id)] }))} className="text-primary hover:underline">Select All</button>
                                                     <span className="text-slate-300">|</span>
                                                     <button type="button" onClick={() => setFormData(prev => ({ ...prev, page_access: [] }))} className="text-slate-500 hover:underline">None</button>
                                                 </div>
@@ -679,6 +707,23 @@ const Settings = () => {
                                                         <span className="text-sm text-slate-700">{page.label}</span>
                                                     </label>
                                                 ))}
+                                            </div>
+
+                                            <div className="mt-4">
+                                                <label className="block text-sm font-medium text-slate-700 mb-2">Dashboard Access</label>
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 p-4 rounded-lg border border-slate-200">
+                                                    {DASHBOARD_PAGES.map(page => (
+                                                        <label key={page.id} className="flex items-center gap-2 cursor-pointer">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={formData.page_access?.includes(page.id) || false}
+                                                                onChange={() => handlePageAccessToggle(page.id)}
+                                                                className="rounded text-primary focus:ring-primary"
+                                                            />
+                                                            <span className="text-sm text-slate-700">{page.label}</span>
+                                                        </label>
+                                                    ))}
+                                                </div>
                                             </div>
                                         </div>
 

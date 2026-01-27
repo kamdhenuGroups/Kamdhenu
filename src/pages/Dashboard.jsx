@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { dashboardService } from '../services/dashboardService';
 import {
     LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -7,6 +8,7 @@ import {
 import { format, parseISO, isSameDay, getYear, getMonth, getHours } from 'date-fns';
 import { Package, Calendar, MapPin, TrendingUp } from 'lucide-react';
 import SiteDashboard from '../components/SiteDashboard';
+
 import { Chart as ChartJS, ArcElement, Tooltip as ChartTooltip, Legend as ChartLegend, CategoryScale, LinearScale, BarElement } from 'chart.js';
 import { Pie as ChartJsPie, Doughnut, Bar as ChartJsBar } from 'react-chartjs-2';
 
@@ -14,10 +16,48 @@ ChartJS.register(ArcElement, ChartTooltip, ChartLegend, CategoryScale, LinearSca
 
 
 
+import useAuthStore from '../store/authStore';
+
 const Dashboard = () => {
+    const { user } = useAuthStore();
     const [loading, setLoading] = useState(true);
     const [allOrders, setAllOrders] = useState([]);
-    const [activeTab, setActiveTab] = useState('order');
+
+    // Determine available tabs based on permissions
+    const tabs = useMemo(() => {
+        const availableTabs = [];
+        const pageAccess = user?.page_access || [];
+
+        // Check for 'dashboard_order' OR legacy 'dashboard' for backward compatibility
+        if (pageAccess.includes('dashboard_order') || pageAccess.includes('dashboard')) {
+            availableTabs.push({ id: 'order', label: 'Order Dashboard' });
+        }
+        if (pageAccess.includes('dashboard_site') || pageAccess.includes('dashboard')) {
+            availableTabs.push({ id: 'site', label: 'Site Dashboard' });
+        }
+
+        return availableTabs;
+    }, [user]);
+
+    const [searchParams, setSearchParams] = useSearchParams();
+    const tabParam = searchParams.get('tab');
+
+    const [activeTab, setActiveTab] = useState(tabParam && tabs.find(t => t.id === tabParam) ? tabParam : (tabs.length > 0 ? tabs[0].id : ''));
+
+    // Sync activeTab with URL param or default
+    useEffect(() => {
+        if (tabParam && tabs.find(t => t.id === tabParam)) {
+            setActiveTab(tabParam);
+        } else if (tabs.length > 0 && !tabParam) {
+            // If no param, default to first available
+            setActiveTab(tabs[0].id);
+        }
+    }, [tabParam, tabs]);
+
+    const handleTabChange = (tabId) => {
+        setActiveTab(tabId);
+        setSearchParams({ tab: tabId });
+    };
 
     // Filters for specific charts
     const currentYear = new Date().getFullYear();
@@ -244,26 +284,26 @@ const Dashboard = () => {
             </div>
 
             {/* Tab Switcher */}
-            <div className="flex gap-4 border-b border-slate-200 mb-6">
-                <button
-                    onClick={() => setActiveTab('order')}
-                    className={`pb-2 px-4 text-sm font-medium transition-colors relative ${activeTab === 'order'
-                        ? 'text-blue-600 border-b-2 border-blue-600'
-                        : 'text-slate-500 hover:text-slate-700'
-                        }`}
-                >
-                    Order Dashboard
-                </button>
-                <button
-                    onClick={() => setActiveTab('site')}
-                    className={`pb-2 px-4 text-sm font-medium transition-colors relative ${activeTab === 'site'
-                        ? 'text-blue-600 border-b-2 border-blue-600'
-                        : 'text-slate-500 hover:text-slate-700'
-                        }`}
-                >
-                    Site Dashboard
-                </button>
-            </div>
+            {tabs.length > 0 ? (
+                <div className="flex gap-4 border-b border-slate-200 mb-6">
+                    {tabs.map(tab => (
+                        <button
+                            key={tab.id}
+                            onClick={() => handleTabChange(tab.id)}
+                            className={`pb-2 px-4 text-sm font-medium transition-colors relative ${activeTab === tab.id
+                                ? 'text-blue-600 border-b-2 border-blue-600'
+                                : 'text-slate-500 hover:text-slate-700'
+                                }`}
+                        >
+                            {tab.label}
+                        </button>
+                    ))}
+                </div>
+            ) : (
+                <div className="p-10 text-center text-slate-500 bg-white rounded-lg border border-slate-200">
+                    <p>You do not have access to any dashboard tabs. Please contact your administrator.</p>
+                </div>
+            )}
 
             {activeTab === 'order' && (
                 <div className="flex flex-col gap-6">
