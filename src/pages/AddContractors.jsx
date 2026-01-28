@@ -277,32 +277,15 @@ const AddContractors = () => {
     }, []);
 
     const contractorOptions = useMemo(() => {
-        const seenPhones = new Set();
-        const options = [];
-
-        contractorsList.forEach(c => {
-            // Exclude Mistry type
-            if (c.customer_type === 'Mistry') return;
-
-            // Normalize phone
-            const phone = c.customer_phone ? String(c.customer_phone).replace(/\D/g, '') : '';
-
-            // Check uniqueness based on phone
-            if (phone) {
-                if (seenPhones.has(phone)) return;
-                seenPhones.add(phone);
-            }
-
-            options.push({
+        return contractorsList
+            .filter(c => c.customer_type === 'Contractor')
+            .map(c => ({
                 label: `${c.contractor_name} ${c.nickname ? `(${c.nickname})` : ''} - ${c.contractor_id || ''}`,
                 value: c.contractor_name,
                 nickname: c.nickname,
                 state: c.state,
                 city: c.city
-            });
-        });
-
-        return options;
+            }));
     }, [contractorsList]);
 
     // Check Phone Uniqueness & Validation

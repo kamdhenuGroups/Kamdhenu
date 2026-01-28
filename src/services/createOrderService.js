@@ -1,40 +1,55 @@
 import { supabase } from '../supabase';
 
-export const fetchActiveCustomers = async () => {
-    try {
-        const { data, error } = await supabase
+export const createOrderService = {
+    searchCustomers: async (query) => {
+        let request = supabase
             .from('customers')
-            .select('customer_id, customer_name, primary_phone, billing_address_line, billing_area, billing_locality, billing_city, billing_state')
-            .eq('customer_status', 'Active')
-            .order('customer_name');
+            .select('customer_id, customer_name, primary_phone, city, firm_name')
+            .limit(100); // Fetch up to 100 for the dropdown list
 
-        if (error) throw error;
-        return data || [];
-    } catch (err) {
-        console.error('Error fetching customers:', err);
-        throw err;
-    }
-};
+        if (query) {
+            request = request.or(`customer_name.ilike.%${query}%,primary_phone.ilike.%${query}%`);
+        } else {
+            request = request.order('created_at', { ascending: false });
+        }
 
-export const fetchSites = async () => {
-    try {
+        const { data, error } = await request;
+
+        if (error) {
+            console.error('Error searching customers:', error);
+            throw error;
+        }
+        return data;
+    },
+
+    getCustomerSites: async (customerId) => {
         const { data, error } = await supabase
             .from('sites')
-            .select(`
-                site_id,
-                address_plot_house_flat_building,
-                address_area_street_locality,
-                city,
-                state,
-                onsite_contact_name,
-                onsite_contact_mobile
-            `)
-            .order('site_id');
+            .select('*')
+            .eq('customer_id', customerId);
 
-        if (error) throw error;
-        return data || [];
-    } catch (err) {
-        console.error('Error fetching sites:', err);
-        throw err;
+        if (error) {
+            console.error('Error fetching sites:', error);
+            throw error;
+        }
+        return data;
+    },
+
+    getInfluencers: async (influencerIds) => {
+        if (!influencerIds || influencerIds.length === 0) return [];
+
+        // Ensure IDs are unique
+        const uniqueIds = [...new Set(influencerIds)];
+
+        const { data, error } = await supabase
+            .from('contractor_data')
+            .select('contractor_id, contractor_name, customer_type, mistry_name')
+            .in('contractor_id', uniqueIds);
+
+        if (error) {
+            console.error('Error fetching influencers:', error);
+            throw error;
+        }
+        return data;
     }
 };
