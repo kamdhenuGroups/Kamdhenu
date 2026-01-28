@@ -1063,23 +1063,21 @@ const AddCustomers = () => {
                                                 <div className="hidden sm:block h-4 w-px bg-border/60"></div>
 
                                                 {/* User Selection Dropdown */}
-                                                {user.Admin === 'Yes' && (
-                                                    <div className="w-full sm:w-64" onClick={(e) => e.stopPropagation()}>
-                                                        <CustomSelect
-                                                            value={site.selectedUser ? site.selectedUser.user_id : user.user_id}
-                                                            onChange={(val) => handleSiteChange(index, 'selectedUserId', val)}
-                                                            className="h-9 text-sm bg-background"
-                                                            placeholder="Select User"
-                                                            options={[
-                                                                { value: user.user_id, label: `Me (${user.full_name || user.Name})` },
-                                                                ...users.filter(u => u.user_id !== user.user_id && u.role === 'RM' && u.department === 'SALES').map(u => ({
-                                                                    value: u.user_id,
-                                                                    label: u.full_name || u.username
-                                                                }))
-                                                            ]}
-                                                        />
-                                                    </div>
-                                                )}
+                                                <div className="w-full sm:w-64" onClick={(e) => e.stopPropagation()}>
+                                                    <CustomSelect
+                                                        value={site.selectedUser ? site.selectedUser.user_id : user.user_id}
+                                                        onChange={(val) => handleSiteChange(index, 'selectedUserId', val)}
+                                                        className="h-9 text-sm bg-background"
+                                                        placeholder="Select User"
+                                                        options={[
+                                                            { value: user.user_id, label: `Me (${user.full_name || user.Name})` },
+                                                            ...users.filter(u => u.user_id !== user.user_id && u.role === 'RM' && u.department === 'SALES').map(u => ({
+                                                                value: u.user_id,
+                                                                label: u.full_name || u.username
+                                                            }))
+                                                        ]}
+                                                    />
+                                                </div>
                                             </div>
                                         </div>
 
