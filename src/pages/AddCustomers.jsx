@@ -448,6 +448,10 @@ const SiteIdPreview = ({ rawId }) => {
 // -- Constants --
 
 const INITIAL_SITE_STATE = {
+    // -- TEMP: Manual ID Date Override --
+    temp_creation_month: '01',
+    temp_creation_year: '2026',
+
     // -- Site Address Fields --
     address_plot_house_flat_building: '',
     address_area_street_locality: '',
@@ -697,9 +701,17 @@ const AddCustomers = () => {
 
     const getGeneratedSiteId = (site, index) => {
         const siteOwner = site.selectedUser || user;
-        const date = new Date();
-        const mm = (date.getMonth() + 1).toString().padStart(2, '0');
-        const yy = date.getFullYear().toString().slice(-2);
+
+        // TEMP: Allow manual override of date
+        let mm, yy;
+        if (site.temp_creation_month && site.temp_creation_year) {
+            mm = site.temp_creation_month;
+            yy = site.temp_creation_year.slice(-2);
+        } else {
+            const date = new Date();
+            mm = (date.getMonth() + 1).toString().padStart(2, '0');
+            yy = date.getFullYear().toString().slice(-2);
+        }
 
         let rmCode = 'XXX';
         try {
@@ -1113,6 +1125,54 @@ const AddCustomers = () => {
 
                                     {!site.isCollapsed && (
                                         <div className="p-6 md:p-8 animate-in slide-in-from-top-2 duration-200">
+
+                                            {/* TEMP: Manual Date Selection for ID */}
+                                            {/* This section is temporary and can be removed later along with state fields */}
+                                            <div className="mb-8 p-5 border border-dashed border-orange-300 bg-orange-50/50 rounded-2xl relative">
+                                                <div className="absolute -top-3 left-4 bg-orange-100 text-orange-700 text-[10px] font-bold px-2 py-0.5 rounded border border-orange-200 uppercase tracking-wider">
+                                                    Date Selection
+                                                </div>
+                                                <div className="text-xs text-orange-600/80 mb-4 font-medium">
+                                                    Select Month & Year to force a specific date in the Site ID (MMYY). If left blank, current date is used.
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <InputGroup label="Creation Month">
+                                                        <CustomSelect
+                                                            value={site.temp_creation_month}
+                                                            onChange={(val) => handleSiteChange(index, 'temp_creation_month', val)}
+                                                            options={[
+                                                                { value: '01', label: 'January (01)' },
+                                                                { value: '02', label: 'February (02)' },
+                                                                { value: '03', label: 'March (03)' },
+                                                                { value: '04', label: 'April (04)' },
+                                                                { value: '05', label: 'May (05)' },
+                                                                { value: '06', label: 'June (06)' },
+                                                                { value: '07', label: 'July (07)' },
+                                                                { value: '08', label: 'August (08)' },
+                                                                { value: '09', label: 'September (09)' },
+                                                                { value: '10', label: 'October (10)' },
+                                                                { value: '11', label: 'November (11)' },
+                                                                { value: '12', label: 'December (12)' }
+                                                            ]}
+                                                            placeholder="Select Month"
+                                                        />
+                                                    </InputGroup>
+                                                    <InputGroup label="Creation Year">
+                                                        <CustomSelect
+                                                            value={site.temp_creation_year}
+                                                            onChange={(val) => handleSiteChange(index, 'temp_creation_year', val)}
+                                                            options={[
+                                                                { value: '2023', label: '2023' },
+                                                                { value: '2024', label: '2024' },
+                                                                { value: '2025', label: '2025' },
+                                                                { value: '2026', label: '2026' }
+                                                            ]}
+                                                            placeholder="Select Year"
+                                                        />
+                                                    </InputGroup>
+                                                </div>
+                                            </div>
+
                                             {/* Section 4: Site Address */}
                                             <SectionHeader title="Site Address" icon={Building} />
 

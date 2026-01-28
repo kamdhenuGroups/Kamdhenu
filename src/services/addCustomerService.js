@@ -91,11 +91,19 @@ export const createCustomer = async (formData, user) => {
             siteNumber += createdCounts[countKey];
             createdCounts[countKey]++;
 
+            // TEMP: manual date override logic
+            let creationDate = new Date();
+            if (site.temp_creation_month && site.temp_creation_year) {
+                const year = parseInt(site.temp_creation_year, 10);
+                const monthIndex = parseInt(site.temp_creation_month, 10) - 1;
+                creationDate = new Date(year, monthIndex, 1);
+            }
+
             const siteId = idGenerator.generateSiteId({
                 user: siteUser,
                 cityCode: cityCode,
                 siteCount: siteNumber,
-                date: new Date()
+                date: creationDate
             });
 
             const sitePayload = {
