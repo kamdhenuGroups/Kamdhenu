@@ -429,15 +429,15 @@ export const orderService = {
     // Get next site number and order number for a user/city/contractor
     getOrderCounts: async (userId, city, contractorId, deliveryAddress = '') => {
         try {
-            // 1. Get all orders for this user and city
+            // 1. Get all sites for this user and city from the sites table
+            // This is more accurate than checking 'orders' because a site can exist without an order
             let query = supabase
-                .from('orders')
-                .select('site_id, order_id, delivery_address, contractor_id')
-                .eq('created_by_user_id', userId)
-                .not('site_id', 'is', null);
+                .from('sites')
+                .select('site_id, city, created_by_user_id, address_plot_house_flat_building, address_area_street_locality, address_landmark')
+                .eq('created_by_user_id', userId);
 
             if (city) {
-                query = query.eq('city', city);
+                // We fetch all sites for this RM to correctly handle city codes
             }
 
             const { data, error } = await query;
@@ -446,33 +446,43 @@ export const orderService = {
 
             let siteNumber = 1;
             let orderNumber = 1;
+
+            // Get target city code
+            const targetCityCode = idGenerator.getCityCode(city);
+
+            // Filter data to only include sites with the same city code
+            const relevantSites = data.filter(s => {
+                const parts = s.site_id.split('/');
+                return parts.length > 1 && parts[1] === targetCityCode;
+            });
+
+            // Check if this address already has a site number for this RM
+            const normAddress = deliveryAddress ? deliveryAddress.toLowerCase().trim() : '';
             let existingSiteFound = false;
 
-            // Normalize delivery address for comparison
-            const normAddress = deliveryAddress ? deliveryAddress.toLowerCase().trim() : '';
-
-            // Check if this address already has a site number in this city (for this RM)
             if (normAddress && normAddress.length > 3) {
-                const addressMatchOrder = data.find(o =>
-                    o.delivery_address && o.delivery_address.toLowerCase().trim() === normAddress
-                );
+                const addressMatchSite = relevantSites.find(s => {
+                    const sAddr = [
+                        s.address_plot_house_flat_building,
+                        s.address_area_street_locality,
+                        s.address_landmark
+                    ].filter(Boolean).join(' ').toLowerCase().trim();
+                    return sAddr === normAddress;
+                });
 
-                if (addressMatchOrder) {
+                if (addressMatchSite) {
                     existingSiteFound = true;
-                    // Extract site number
-                    const parts = addressMatchOrder.site_id.split('-');
+                    const parts = addressMatchSite.site_id.split('-');
                     if (parts.length > 1) {
                         const num = parseInt(parts[parts.length - 1]);
-                        if (!isNaN(num)) {
-                            siteNumber = num;
-                        }
+                        if (!isNaN(num)) siteNumber = num;
                     }
                 }
             }
 
-            // If no existing site for address found, find next available site number
+            // If no existing site found, find next available site number
             if (!existingSiteFound) {
-                const uniqueSiteIds = new Set(data.map(order => order.site_id).filter(Boolean));
+                const uniqueSiteIds = new Set(relevantSites.map(s => s.site_id).filter(Boolean));
                 let maxSiteNum = 0;
 
                 uniqueSiteIds.forEach(sid => {

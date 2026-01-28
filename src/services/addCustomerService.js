@@ -84,9 +84,9 @@ export const createCustomer = async (formData, user) => {
             // Get next site number dynamically
             let { siteNumber } = await orderService.getOrderCounts(siteUser.user_id, site.city, null);
 
-            // Adjust for multiple sites in same city within this batch
-            // We need to key counts by user + city to be accurate if multiple users are used
-            const countKey = `${siteUser.user_id}_${site.city}`;
+            // Adjust for multiple sites in same city code within this batch
+            // We need to key counts by user + cityCode to be accurate
+            const countKey = `${siteUser.user_id}_${cityCode}`;
             if (!createdCounts[countKey]) createdCounts[countKey] = 0;
             siteNumber += createdCounts[countKey];
             createdCounts[countKey]++;

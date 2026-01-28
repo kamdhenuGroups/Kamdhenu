@@ -536,10 +536,13 @@ const AddCustomers = () => {
         return () => clearTimeout(debounce);
     }, [formData.primary_phone]);
 
-    // Fetch site count for a city (and user) if not already loaded
+    // Fetch site count for a city code (and user) if not already loaded
     const fetchCityCount = async (city, userId) => {
-        const key = `${userId}_${city}`;
-        if (!city || !userId || cityCounts[key] !== undefined) return;
+        if (!city || !userId) return;
+        const cityCode = idGenerator.getCityCode(city);
+        const key = `${userId}_${cityCode}`;
+
+        if (cityCounts[key] !== undefined) return;
 
         try {
             const siteNumber = await getSiteCount(userId, city);
@@ -692,6 +695,42 @@ const AddCustomers = () => {
         });
     };
 
+    const getGeneratedSiteId = (site, index) => {
+        const siteOwner = site.selectedUser || user;
+        const date = new Date();
+        const mm = (date.getMonth() + 1).toString().padStart(2, '0');
+        const yy = date.getFullYear().toString().slice(-2);
+
+        let rmCode = 'XXX';
+        try {
+            rmCode = idGenerator.getRMCode(siteOwner);
+        } catch (e) {
+            // Fallback
+        }
+
+        if (!site.city) return null;
+
+        const cityCode = idGenerator.getCityCode(site.city);
+        let siteCountSuffix = 'XX';
+
+        const countKey = `${siteOwner.user_id}_${cityCode}`;
+        const baseCount = cityCounts[countKey];
+
+        if (baseCount !== undefined) {
+            const offset = formData.sites
+                .slice(0, index)
+                .filter(s => {
+                    const sOwner = s.selectedUser || user;
+                    return idGenerator.getCityCode(s.city) === cityCode && sOwner.user_id === siteOwner.user_id;
+                })
+                .length;
+            const currentCount = baseCount + offset;
+            siteCountSuffix = currentCount < 10 ? `0${currentCount}` : currentCount;
+        }
+
+        return `${mm}${yy}/${cityCode}/${rmCode}-${siteCountSuffix}`;
+    };
+
     const validateForm = () => {
         if (!formData.customer_name?.trim()) return 'Customer Name is required';
         if (!formData.primary_phone?.trim()) return 'Primary Phone is required';
@@ -703,6 +742,7 @@ const AddCustomers = () => {
 
 
         // Validate Sites
+        const generatedSiteIds = new Set();
         for (let i = 0; i < formData.sites.length; i++) {
             const site = formData.sites[i];
             if (!site.address_plot_house_flat_building?.trim()) return `Site ${i + 1}: Address/Plot is required`;
@@ -712,6 +752,14 @@ const AddCustomers = () => {
             if (!site.onsite_contact_name?.trim()) return `Site ${i + 1}: Contact Name is required`;
             if (!site.onsite_contact_mobile?.trim()) return `Site ${i + 1}: Contact Mobile is required`;
             if (site.onsite_contact_mobile.length !== 10) return `Site ${i + 1}: Contact Mobile must be 10 digits`;
+
+            const siteId = getGeneratedSiteId(site, i);
+            if (siteId && !siteId.includes('XX')) {
+                if (generatedSiteIds.has(siteId)) {
+                    return `Duplicate Site ID detected in form: ${siteId}. Please check city and user assignments.`;
+                }
+                generatedSiteIds.add(siteId);
+            }
         }
 
         return null;
@@ -1015,63 +1063,29 @@ const AddCustomers = () => {
                                                 <div className="hidden sm:block h-4 w-px bg-border/60"></div>
 
                                                 {/* User Selection Dropdown */}
-                                                <div className="w-full sm:w-64" onClick={(e) => e.stopPropagation()}>
-                                                    <CustomSelect
-                                                        value={site.selectedUser ? site.selectedUser.user_id : user.user_id}
-                                                        onChange={(val) => handleSiteChange(index, 'selectedUserId', val)}
-                                                        className="h-9 text-sm bg-background"
-                                                        placeholder="Select User"
-                                                        options={[
-                                                            { value: user.user_id, label: `Me (${user.full_name || user.Name})` },
-                                                            ...users.filter(u => u.user_id !== user.user_id && u.role === 'RM' && u.department === 'SALES').map(u => ({
-                                                                value: u.user_id,
-                                                                label: u.full_name || u.username
-                                                            }))
-                                                        ]}
-                                                    />
-                                                </div>
+                                                {user.Admin === 'Yes' && (
+                                                    <div className="w-full sm:w-64" onClick={(e) => e.stopPropagation()}>
+                                                        <CustomSelect
+                                                            value={site.selectedUser ? site.selectedUser.user_id : user.user_id}
+                                                            onChange={(val) => handleSiteChange(index, 'selectedUserId', val)}
+                                                            className="h-9 text-sm bg-background"
+                                                            placeholder="Select User"
+                                                            options={[
+                                                                { value: user.user_id, label: `Me (${user.full_name || user.Name})` },
+                                                                ...users.filter(u => u.user_id !== user.user_id && u.role === 'RM' && u.department === 'SALES').map(u => ({
+                                                                    value: u.user_id,
+                                                                    label: u.full_name || u.username
+                                                                }))
+                                                            ]}
+                                                        />
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
 
                                         <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto pl-12 sm:pl-0">
                                             {(() => {
-                                                const siteOwner = site.selectedUser || user;
-                                                const date = new Date();
-                                                const mm = (date.getMonth() + 1).toString().padStart(2, '0');
-                                                const yy = date.getFullYear().toString().slice(-2);
-
-                                                // Get RM Code
-                                                let rmCode = 'XXX';
-                                                try {
-                                                    rmCode = idGenerator.getRMCode(siteOwner);
-                                                } catch (e) {
-                                                    // Fallback
-                                                }
-
-                                                if (!site.city) {
-                                                    return <SiteIdPreview rawId={null} />;
-                                                }
-
-                                                const cityCode = idGenerator.getCityCode(site.city);
-                                                let siteCountSuffix = 'XX';
-
-                                                const countKey = `${siteOwner.user_id}_${site.city}`;
-                                                const baseCount = cityCounts[countKey];
-
-                                                if (baseCount !== undefined) {
-                                                    const offset = formData.sites
-                                                        .slice(0, index)
-                                                        .filter(s => {
-                                                            const sOwner = s.selectedUser || user;
-                                                            return s.city === site.city && sOwner.user_id === siteOwner.user_id;
-                                                        })
-                                                        .length;
-                                                    const currentCount = baseCount + offset;
-                                                    siteCountSuffix = currentCount < 10 ? `0${currentCount}` : currentCount;
-                                                }
-
-                                                const rawId = `${mm}${yy}/${cityCode}/${rmCode}-${siteCountSuffix}`;
-
+                                                const rawId = getGeneratedSiteId(site, index);
                                                 return <SiteIdPreview rawId={rawId} />;
                                             })()}
 
