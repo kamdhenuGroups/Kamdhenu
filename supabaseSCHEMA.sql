@@ -176,6 +176,7 @@ CREATE TABLE public.sites (
   map_link text,
   onsite_contact_name text NOT NULL,
   onsite_contact_mobile text NOT NULL,
+  rm_user_id text REFERENCES public.users(user_id),
   
   assigned_influencers text[], -- List of Contractor IDs
   main_influencer_id text REFERENCES public.contractor_data(contractor_id),

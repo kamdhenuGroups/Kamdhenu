@@ -99,9 +99,22 @@ export const createCustomer = async (formData, user) => {
                 creationDate = new Date(year, monthIndex, 1);
             }
 
+            const rmCode = await (async () => {
+                if (!siteUser.user_id) return 'XXX';
+                const { data: uData } = await supabase
+                    .from('users')
+                    .select('full_name')
+                    .eq('user_id', siteUser.user_id)
+                    .single();
+
+                const u = uData ? { ...siteUser, full_name: uData.full_name } : siteUser;
+                return idGenerator.getRMCode(u);
+            })();
+
             const siteId = idGenerator.generateSiteId({
                 user: siteUser,
                 cityCode: cityCode,
+                rmCode: rmCode,
                 siteCount: siteNumber,
                 date: creationDate
             });
@@ -117,7 +130,8 @@ export const createCustomer = async (formData, user) => {
                 map_link: site.map_link || null,
                 onsite_contact_name: site.onsite_contact_name,
                 onsite_contact_mobile: site.onsite_contact_mobile,
-                created_by_user_id: siteUser.user_id,
+                rm_user_id: siteUser.user_id,
+                created_by_user_id: user.user_id,
                 main_influencer_id: site.main_influencer?.value || null,
                 assigned_influencers: site.additional_influencers
                     ? site.additional_influencers.map(i => i.value)

@@ -16,10 +16,11 @@ import { supabase } from '../supabase';
 import toast from 'react-hot-toast';
 import useAuthStore from '../store/authStore';
 import ContractorVisibility from '../components/ContractorVisibility';
+import TableFilterHeader from '../components/TableFilterHeader';
 
 
 // Constants moved outside component to prevent re-creation
-const ITEMS_PER_PAGE = 6;
+const ITEMS_PER_PAGE = 10;
 
 const ALL_PAGES = [
     { id: 'my-profile', label: 'My Profile' },
@@ -76,7 +77,8 @@ const Settings = () => {
     const [uploading, setUploading] = useState(false);
 
     // Pagination & Filter
-    const [selectedDepartment, setSelectedDepartment] = useState('All');
+    const [selectedDepartments, setSelectedDepartments] = useState([]);
+    const [selectedRoles, setSelectedRoles] = useState([]);
     const [currentPage, setCurrentPage] = useState(1);
 
     // Form & Errors
@@ -92,7 +94,7 @@ const Settings = () => {
     // Reset pagination when search changes
     useEffect(() => {
         setCurrentPage(1);
-    }, [searchTerm, selectedDepartment]);
+    }, [searchTerm, selectedDepartments, selectedRoles]);
 
 
 
@@ -406,6 +408,9 @@ const Settings = () => {
     };
 
     // Filter Logic
+    const departmentOptions = useMemo(() => [...new Set(users.map(u => u.department).filter(Boolean))], [users]);
+    const roleOptions = useMemo(() => [...new Set(users.map(u => u.role).filter(Boolean))], [users]);
+
     const filteredUsers = useMemo(() => {
         return users.filter(user => {
             const matchesSearch = (
@@ -414,10 +419,11 @@ const Settings = () => {
                 user.user_id?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                 user.designation?.toLowerCase().includes(searchTerm.toLowerCase())
             );
-            const matchesDepartment = selectedDepartment === 'All' || user.department === selectedDepartment;
-            return matchesSearch && matchesDepartment;
+            const matchesDepartment = selectedDepartments.length === 0 || selectedDepartments.includes(user.department);
+            const matchesRole = selectedRoles.length === 0 || selectedRoles.includes(user.role);
+            return matchesSearch && matchesDepartment && matchesRole;
         });
-    }, [users, searchTerm, selectedDepartment]);
+    }, [users, searchTerm, selectedDepartments, selectedRoles]);
 
     // Pagination Logic
     const totalPages = Math.ceil(filteredUsers.length / ITEMS_PER_PAGE);
@@ -515,8 +521,22 @@ const Settings = () => {
                                 <thead>
                                     <tr className="bg-slate-50/50 border-b border-slate-100 sticky top-0 z-10 backdrop-blur-md">
                                         <HeaderCell>User Details</HeaderCell>
-                                        <HeaderCell>Role & Designation</HeaderCell>
-                                        <HeaderCell>Department</HeaderCell>
+                                        <th className="px-4 py-3 text-left">
+                                            <TableFilterHeader
+                                                title="Role & Designation"
+                                                options={roleOptions}
+                                                selectedValues={selectedRoles}
+                                                onChange={setSelectedRoles}
+                                            />
+                                        </th>
+                                        <th className="px-4 py-3 text-left">
+                                            <TableFilterHeader
+                                                title="Department"
+                                                options={departmentOptions}
+                                                selectedValues={selectedDepartments}
+                                                onChange={setSelectedDepartments}
+                                            />
+                                        </th>
                                         <HeaderCell>Status</HeaderCell>
                                         <HeaderCell align="right">Actions</HeaderCell>
                                     </tr>

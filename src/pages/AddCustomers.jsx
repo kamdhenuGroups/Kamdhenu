@@ -540,22 +540,25 @@ const AddCustomers = () => {
         return () => clearTimeout(debounce);
     }, [formData.primary_phone]);
 
-    // Fetch site count for a city code (and user) if not already loaded
-    const fetchCityCount = async (city, userId) => {
-        if (!city || !userId) return;
-        const cityCode = idGenerator.getCityCode(city);
-        const key = `${userId}_${cityCode}`;
+    // Fetch site count for a user (Global Site Count)
+    const fetchUserCount = async (userId) => {
+        if (!userId) return;
+        // Key is just userId now as count is global
+        const key = userId;
 
         if (cityCounts[key] !== undefined) return;
 
         try {
-            const siteNumber = await getSiteCount(userId, city);
+            // We pass city as null or empty to getSiteCount/getOrderCounts effectively
+            // But getOrderCounts expects a city potentially for other logic, but we modified it to ignore city for counting.
+            // We can pass 'XXX' or anything.
+            const siteNumber = await getSiteCount(userId, '');
             setCityCounts(prev => ({
                 ...prev,
                 [key]: siteNumber
             }));
         } catch (error) {
-            console.error(`Error fetching count for ${city}:`, error);
+            console.error(`Error fetching count for user ${userId}:`, error);
         }
     };
 
@@ -660,15 +663,19 @@ const AddCustomers = () => {
             return { ...prev, sites: newSites };
         });
 
-        // Trigger fetch for city count if city changed or user changed
-        if (field === 'city' && value) {
-            const currentUserForSite = formData.sites[index].selectedUser || user;
-            fetchCityCount(value, currentUserForSite.user_id);
+        // Trigger fetch for user count if user changed or initialized
+        // We really only need to fetch once per user involved.
+        if (field === 'selectedUserId' && selectedSiteUser) {
+            fetchUserCount(selectedSiteUser.user_id);
         }
-        if (field === 'selectedUserId' && selectedSiteUser && formData.sites[index].city) {
-            fetchCityCount(formData.sites[index].city, selectedSiteUser.user_id);
-        }
+        // Also ensure we fetch for default user if likely needed (e.g. initial load logic handled elsewhere?)
     };
+
+    // Ensure we fetch count for current user on mount or when adding site
+    useEffect(() => {
+        if (user?.user_id) fetchUserCount(user.user_id);
+    }, [user]);
+
 
     const addSite = () => {
         setFormData(prev => ({
@@ -700,7 +707,12 @@ const AddCustomers = () => {
     };
 
     const getGeneratedSiteId = (site, index) => {
-        const siteOwner = site.selectedUser || user;
+        // Attempt to find the effective site owner in the users list to ensure we have the DB full_name for RM Code
+        let siteOwner = site.selectedUser;
+        if (!siteOwner && user?.user_id) {
+            siteOwner = users.find(u => u.user_id === user.user_id) || user;
+        }
+        siteOwner = siteOwner || user;
 
         // TEMP: Allow manual override of date
         let mm, yy;
@@ -725,7 +737,8 @@ const AddCustomers = () => {
         const cityCode = idGenerator.getCityCode(site.city);
         let siteCountSuffix = 'XX';
 
-        const countKey = `${siteOwner.user_id}_${cityCode}`;
+        // Count is now Global per User
+        const countKey = siteOwner.user_id;
         const baseCount = cityCounts[countKey];
 
         if (baseCount !== undefined) {
@@ -733,7 +746,8 @@ const AddCustomers = () => {
                 .slice(0, index)
                 .filter(s => {
                     const sOwner = s.selectedUser || user;
-                    return idGenerator.getCityCode(s.city) === cityCode && sOwner.user_id === siteOwner.user_id;
+                    // Count all sites for this user in the form
+                    return sOwner.user_id === siteOwner.user_id;
                 })
                 .length;
             const currentCount = baseCount + offset;

@@ -450,11 +450,8 @@ export const orderService = {
             // Get target city code
             const targetCityCode = idGenerator.getCityCode(city);
 
-            // Filter data to only include sites with the same city code
-            const relevantSites = data.filter(s => {
-                const parts = s.site_id.split('/');
-                return parts.length > 1 && parts[1] === targetCityCode;
-            });
+            // Use all sites for this user to determine global sequence
+            const relevantSites = data;
 
             // Check if this address already has a site number for this RM
             const normAddress = deliveryAddress ? deliveryAddress.toLowerCase().trim() : '';
@@ -593,7 +590,7 @@ export const idGenerator = {
         return `${typePrefix}/${phoneLast5}/${cityCode}/${nameDisplay}`;
     },
 
-    generateSiteId: ({ user, cityCode, siteCount, date }) => {
+    generateSiteId: ({ user, cityCode, rmCode, siteCount, date }) => {
         if (!user || !cityCode) return '';
 
         // MMYY
@@ -602,12 +599,12 @@ export const idGenerator = {
         const yy = validDate.getFullYear().toString().slice(-2);
 
         // RM Name Code
-        const rmCode = idGenerator.getRMCode(user);
+        const finalRmCode = rmCode || idGenerator.getRMCode(user);
 
         // Site Number
         const suffix = siteCount < 10 ? `0${siteCount}` : siteCount;
 
-        return `${mm}${yy}/${cityCode}/${rmCode}-${suffix}`;
+        return `${mm}${yy}/${cityCode}/${finalRmCode}-${suffix}`;
     },
 
     generateOrderId: (siteId, orderNumber = 1) => {
