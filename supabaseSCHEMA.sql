@@ -51,21 +51,31 @@ CREATE TABLE public.contractor_data (
 CREATE TABLE public.customers (
   customer_id text NOT NULL,
   customer_name text NOT NULL,
+  firm_name text,
+
   primary_phone text NOT NULL UNIQUE,
   secondary_phone text,
   email text UNIQUE,
   gst_number text UNIQUE,
-  pan_number text UNIQUE,
-  billing_address_line text NOT NULL,
-  billing_area text,
-  billing_locality text,
-  billing_city text NOT NULL,
-  billing_state text NOT NULL,
+  is_gst_registered boolean DEFAULT false,
+  gst_billing_address text,
+  
+  -- Flattened Primary Site Address
+  address_plot_house_flat_building text,
+  address_area_street_locality text,
+  address_landmark text,
+  map_link text,
+  city text,
+  state text,
+  
+  -- Onsite Contact (Flattened)
+  onsite_contact_name text,
+  onsite_contact_mobile text,
+  
   created_by_user_id text NOT NULL,
   customer_status text NOT NULL DEFAULT 'Active'::text CHECK (customer_status = ANY (ARRAY['Active'::text, 'Inactive'::text, 'Blacklisted'::text])),
   created_at timestamp with time zone NOT NULL DEFAULT timezone('Asia/Kolkata'::text, now()),
   updated_at timestamp with time zone NOT NULL DEFAULT timezone('Asia/Kolkata'::text, now()),
-  is_gst_registered boolean DEFAULT false,
   CONSTRAINT customers_pkey PRIMARY KEY (customer_id),
   CONSTRAINT fk_customer_created_by FOREIGN KEY (created_by_user_id) REFERENCES public.users(user_id)
 );
@@ -157,6 +167,7 @@ CREATE TABLE public.products (
 );
 CREATE TABLE public.sites (
   site_id text NOT NULL,
+  customer_id text NOT NULL, -- Link to Customer
   address_plot_house_flat_building text NOT NULL,
   address_area_street_locality text NOT NULL,
   address_landmark text,
@@ -165,13 +176,16 @@ CREATE TABLE public.sites (
   map_link text,
   onsite_contact_name text NOT NULL,
   onsite_contact_mobile text NOT NULL,
-  main_influencer_status text CHECK (main_influencer_status = ANY (ARRAY['Old'::text, 'New'::text])),
-  secondary_influencer_status text CHECK (secondary_influencer_status = ANY (ARRAY['Old'::text, 'New'::text])),
+  
+  assigned_influencers text[], -- List of Contractor IDs
+  main_influencer_id text REFERENCES public.contractor_data(contractor_id),
+
   created_by_user_id text NOT NULL,
   created_at timestamp without time zone DEFAULT (now() AT TIME ZONE 'Asia/Kolkata'::text),
   updated_at timestamp without time zone DEFAULT (now() AT TIME ZONE 'Asia/Kolkata'::text),
   CONSTRAINT sites_pkey PRIMARY KEY (site_id),
-  CONSTRAINT sites_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.users(user_id)
+  CONSTRAINT sites_created_by_user_id_fkey FOREIGN KEY (created_by_user_id) REFERENCES public.users(user_id),
+  CONSTRAINT sites_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.customers(customer_id)
 );
 CREATE TABLE public.user_contractor_access (
   id bigint NOT NULL DEFAULT nextval('user_contractor_access_id_seq'::regclass),

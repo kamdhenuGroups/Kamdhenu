@@ -578,7 +578,10 @@ const NewContractorApproval = () => {
                                             </div>
                                         </td>
                                         <td className="px-6 py-4" style={{ whiteSpace: 'nowrap' }}>
-                                            <div className="font-medium text-slate-900">{c.contractor_name}</div>
+                                            <div className="font-medium text-slate-900">
+                                                {c.contractor_name}
+                                                {c.customer_type === 'Mistry' && c.mistry_name ? ` (${c.mistry_name})` : ''}
+                                            </div>
                                             <div className="text-xs text-slate-500 mt-0.5">{c.contractor_id}</div>
                                         </td>
                                         <td className="px-6 py-4" style={{ whiteSpace: 'nowrap' }}>

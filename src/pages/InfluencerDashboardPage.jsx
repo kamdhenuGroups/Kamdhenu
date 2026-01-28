@@ -31,7 +31,7 @@ const InfluencerDashboardPage = () => {
     // Reset pagination when filters change
     useEffect(() => {
         setCurrentPage(1);
-    }, [searchQuery, contractorTypeFilter, selectedRm]);
+    }, [contractorTypeFilter, selectedRm, searchQuery]);
 
     const fetchRMs = async () => {
         setLoadingRms(true);
@@ -65,18 +65,17 @@ const InfluencerDashboardPage = () => {
     const filteredInfluencers = influencers.filter(influencer => {
         const matchesType = contractorTypeFilter === 'All' || influencer.customer_type === contractorTypeFilter;
 
-        if (!matchesType) return false;
+        const searchLower = searchQuery.toLowerCase();
+        const name = (influencer.customer_type === 'Mistry' ? influencer.mistry_name : influencer.contractor_name) || '';
 
-        if (!searchQuery) return true;
+        const matchesSearch = searchQuery === '' ||
+            String(influencer.contractor_id || '').toLowerCase().includes(searchLower) ||
+            String(name || '').toLowerCase().includes(searchLower) ||
+            String(influencer.customer_phone || '').toLowerCase().includes(searchLower) ||
+            String(influencer.city || '').toLowerCase().includes(searchLower) ||
+            String(influencer.state || '').toLowerCase().includes(searchLower);
 
-        const query = searchQuery.toLowerCase();
-        return (
-            (influencer.contractor_name?.toLowerCase().includes(query)) ||
-            (influencer.contractor_id?.toString().toLowerCase().includes(query)) ||
-            (influencer.customer_phone?.toLowerCase().includes(query)) ||
-            (influencer.city?.toLowerCase().includes(query)) ||
-            (influencer.state?.toLowerCase().includes(query))
-        );
+        return matchesType && matchesSearch;
     });
 
     // Pagination Logic
@@ -102,14 +101,14 @@ const InfluencerDashboardPage = () => {
     };
 
     return (
-        <div className="max-w-[1600px] mx-auto space-y-6 p-6">
+        <div className="h-full flex flex-col gap-6 max-w-screen-2xl mx-auto w-full p-4 lg:p-8">
 
             {/* Header & Controls */}
-            <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+            <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 shrink-0">
                 <div>
-                    <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                    <h1 className="text-3xl font-light text-slate-800 tracking-tight flex items-center gap-2">
                         Influencer's Dashboard
-                    </h2>
+                    </h1>
                     <p className="text-slate-500 text-sm mt-1">Manage relationship managers and review their assigned network.</p>
                 </div>
 
@@ -145,7 +144,7 @@ const InfluencerDashboardPage = () => {
 
                 {/* Width Wise RM Profile Card */}
                 {selectedRm && selectedRmDetails && (
-                    <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 relative overflow-hidden">
+                    <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 relative overflow-hidden">
                         {/* Decorative Background */}
                         <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-50/50 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none"></div>
 
@@ -206,7 +205,7 @@ const InfluencerDashboardPage = () => {
                 )}
 
                 {/* Full Width Influencer List */}
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden flex flex-col min-h-[600px]">
+                <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden flex flex-col min-h-[600px]">
                     <div className="px-6 py-5 border-b border-slate-50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white">
                         <div className="flex flex-col gap-1">
                             <h3 className="font-bold text-slate-800 flex items-center gap-2">
@@ -220,19 +219,19 @@ const InfluencerDashboardPage = () => {
                             )}
                         </div>
 
-                        {/* Filter & Search Control */}
-                        <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
-                            {/* Search Bar */}
+                        {/* Search & Filter Controls */}
+                        <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+                            {/* Search Field */}
                             <div className="relative w-full sm:w-64">
                                 <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
                                     <Search size={14} />
                                 </div>
                                 <input
                                     type="text"
-                                    placeholder="Search Influencers..."
+                                    placeholder="Search by name, ID, phone..."
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
-                                    className="w-full bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-sm rounded-lg py-2 pl-9 pr-4 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all placeholder:text-slate-400"
+                                    className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-xs rounded-lg py-2 pl-9 pr-3 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-medium"
                                 />
                             </div>
 
@@ -257,85 +256,106 @@ const InfluencerDashboardPage = () => {
                         </div>
                     </div>
 
-                    <div className="overflow-x-auto">
-                        <table className="w-full min-w-[1000px] text-left border-collapse">
-                            <thead>
-                                <tr className="bg-slate-50/80 border-b border-slate-100 text-slate-500 text-xs font-semibold uppercase tracking-wider">
-                                    <th className="px-6 py-4 whitespace-nowrap w-32">ID</th>
-                                    <th className="px-6 py-4 min-w-[250px]">Name</th>
-                                    <th className="px-6 py-4 min-w-[150px]">Phone</th>
-                                    <th className="px-6 py-4 min-w-[150px]">Type</th>
-                                    <th className="px-6 py-4 min-w-[200px]">Location</th>
-                                </tr>
-                            </thead>
-                            <tbody className="text-sm divide-y divide-slate-50">
-                                {loadingInfluencers ? (
-                                    <tr>
-                                        <td colSpan="5" className="px-6 py-20 text-center">
-                                            <div className="flex flex-col items-center justify-center gap-3">
-                                                <div className="w-8 h-8 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-                                                <span className="text-slate-500 font-medium">Fetching Influencers...</span>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ) : paginatedInfluencers.length === 0 ? (
-                                    <tr>
-                                        <td colSpan="5" className="px-6 py-20 text-center">
-                                            <div className="flex flex-col items-center justify-center gap-3 max-w-xs mx-auto">
-                                                <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center text-slate-300">
-                                                    {selectedRm ? <Search size={24} /> : <Users size={24} />}
-                                                </div>
-                                                <h4 className="text-slate-900 font-medium">
-                                                    {selectedRm ? "No results found" : "Select a Relationship Manager"}
-                                                </h4>
-                                                <p className="text-slate-500 text-xs">
-                                                    {selectedRm
-                                                        ? (influencers.length > 0 ? "Try adjusting your search or filters." : "This RM does not have any assigned contractors yet.")
-                                                        : "Please select a Relationship Manager from the dropdown above to view their assigned Influencers."
-                                                    }
-                                                </p>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ) : (
-                                    paginatedInfluencers.map((influencer) => (
-                                        <tr key={influencer.contractor_id} className="group hover:bg-slate-50/60 transition-colors">
-                                            <td className="px-6 py-4 text-xs text-slate-500 whitespace-nowrap">
-                                                <span className="px-2 py-1 rounded bg-slate-100 group-hover:bg-white group-hover:shadow-sm transition-all border border-transparent group-hover:border-slate-200">
-                                                    {influencer.contractor_id}
-                                                </span>
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap font-medium text-slate-900" title={influencer.contractor_name}>
-                                                {influencer.contractor_name || '-'}
-                                            </td>
-                                            <td className="px-6 py-4 text-slate-600 whitespace-nowrap">
-                                                {influencer.customer_phone || '-'}
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-100">
-                                                    {influencer.customer_type || '-'}
-                                                </span>
-                                            </td>
-                                            <td className="px-6 py-4 text-slate-600 whitespace-nowrap">
-                                                <div className="flex items-center gap-1.5 w-full">
-                                                    <MapPin size={14} className="text-slate-400 flex-shrink-0" />
-                                                    <span title={`${influencer.city || ''}, ${influencer.state || ''}`}>
-                                                        {influencer.city || '-'}{influencer.city && influencer.state ? ', ' : ''}{influencer.state || '-'}
-                                                    </span>
-                                                </div>
-                                            </td>
+                    {/* Table container with horizontal scroll ONLY for the table */}
+                    <div className="flex-1 flex flex-col">
+                        <div className="flex-1 relative">
+                            <div className="absolute inset-0 overflow-x-auto">
+                                <table className="w-full text-left border-collapse min-w-full">
+                                    <thead>
+                                        <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 text-[10px] font-semibold uppercase tracking-wider sticky top-0 z-10 shadow-sm">
+                                            <th className="px-4 py-3 whitespace-nowrap min-w-[150px]">ID</th>
+                                            <th className="px-4 py-3 text-left min-w-[300px]">Name</th>
+                                            <th className="px-4 py-3 whitespace-nowrap min-w-[150px]">Phone</th>
+                                            <th className="px-4 py-3 whitespace-nowrap min-w-[120px]">Type</th>
+                                            <th className="px-4 py-3 text-left min-w-[250px]">Location</th>
                                         </tr>
-                                    ))
-                                )}
-                            </tbody>
-                        </table>
+                                    </thead>
+                                    <tbody className="text-sm divide-y divide-slate-50">
+                                        {loadingInfluencers ? (
+                                            <tr>
+                                                <td colSpan="5" className="px-6 py-20 text-center">
+                                                    <div className="flex flex-col items-center justify-center gap-3">
+                                                        <div className="w-8 h-8 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+                                                        <span className="text-slate-500 font-medium">Fetching Influencers...</span>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ) : paginatedInfluencers.length === 0 ? (
+                                            <tr>
+                                                <td colSpan="5" className="px-6 py-20 text-center">
+                                                    <div className="flex flex-col items-center justify-center gap-3 max-w-xs mx-auto">
+                                                        <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center text-slate-300">
+                                                            {selectedRm ? <Search size={24} /> : <Users size={24} />}
+                                                        </div>
+                                                        <h4 className="text-slate-900 font-medium">
+                                                            {selectedRm ? "No results found" : "Select a Relationship Manager"}
+                                                        </h4>
+                                                        <p className="text-slate-500 text-xs">
+                                                            {selectedRm
+                                                                ? (influencers.length > 0 ? "Try adjusting your filters." : "This RM does not have any assigned contractors yet.")
+                                                                : "Please select a Relationship Manager from the dropdown above to view their assigned Influencers."
+                                                            }
+                                                        </p>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            <>
+                                                {paginatedInfluencers.map((influencer) => (
+                                                    <tr key={influencer.contractor_id} className="group hover:bg-slate-50/60 transition-colors">
+                                                        <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">
+                                                            <span className="px-2 py-1 rounded bg-slate-100 group-hover:bg-white group-hover:shadow-sm transition-all border border-transparent group-hover:border-slate-200 inline-block min-w-[120px] max-w-full overflow-hidden text-ellipsis">
+                                                                {influencer.contractor_id}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-4 py-3 font-medium text-slate-900 min-w-[280px] max-w-full">
+                                                            <div className="truncate" title={influencer.customer_type === 'Mistry' ? influencer.mistry_name : influencer.contractor_name}>
+                                                                {influencer.customer_type === 'Mistry' ? (influencer.mistry_name || '-') : (influencer.contractor_name || '-')}
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-4 py-3 text-slate-600 whitespace-nowrap min-w-[140px]">
+                                                            <div className="truncate">
+                                                                {influencer.customer_phone || '-'}
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-4 py-3 whitespace-nowrap min-w-[110px]">
+                                                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-100">
+                                                                {influencer.customer_type || '-'}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-4 py-3 text-slate-600 min-w-[240px] max-w-full">
+                                                            <div className="flex items-start gap-1.5">
+                                                                <MapPin size={14} className="text-slate-400 flex-shrink-0 mt-0.5" />
+                                                                <span className="truncate" title={`${influencer.city || ''}, ${influencer.state || ''}`}>
+                                                                    {influencer.city || '-'}{influencer.city && influencer.state ? ', ' : ''}{influencer.state || '-'}
+                                                                </span>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                                {/* Fill remaining rows to maintain consistent height (10 items) */}
+                                                {paginatedInfluencers.length < itemsPerPage && Array.from({ length: itemsPerPage - paginatedInfluencers.length }).map((_, index) => (
+                                                    <tr key={`empty-${index}`} className="pointer-events-none">
+                                                        <td className="px-4 py-3">&nbsp;</td>
+                                                        <td className="px-4 py-3">&nbsp;</td>
+                                                        <td className="px-4 py-3">&nbsp;</td>
+                                                        <td className="px-4 py-3">&nbsp;</td>
+                                                        <td className="px-4 py-3">&nbsp;</td>
+                                                    </tr>
+                                                ))}
+                                            </>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
                     </div>
 
                     {/* Pagination Footer */}
-                    {!loadingInfluencers && filteredInfluencers.length > 0 && (
+                    {!loadingInfluencers && (
                         <div className="px-6 py-4 border-t border-slate-50 flex items-center justify-between bg-white">
                             <span className="text-xs text-slate-500">
-                                Showing <span className="font-semibold text-slate-700">{Math.min((currentPage - 1) * itemsPerPage + 1, filteredInfluencers.length)}</span> to <span className="font-semibold text-slate-700">{Math.min(currentPage * itemsPerPage, filteredInfluencers.length)}</span> of <span className="font-semibold text-slate-700">{filteredInfluencers.length}</span> Influencer
+                                Showing <span className="font-semibold text-slate-700">{filteredInfluencers.length === 0 ? 0 : Math.min((currentPage - 1) * itemsPerPage + 1, filteredInfluencers.length)}</span> to <span className="font-semibold text-slate-700">{Math.min(currentPage * itemsPerPage, filteredInfluencers.length)}</span> of <span className="font-semibold text-slate-700">{filteredInfluencers.length}</span> Influencer
                             </span>
                             <div className="flex items-center gap-2">
                                 <button
@@ -347,7 +367,7 @@ const InfluencerDashboardPage = () => {
                                 </button>
                                 <button
                                     onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                                    disabled={currentPage === totalPages}
+                                    disabled={currentPage >= totalPages}
                                     className="px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                                 >
                                     Next
@@ -358,7 +378,6 @@ const InfluencerDashboardPage = () => {
                 </div>
             </div>
         </div>
-
     );
 };
 

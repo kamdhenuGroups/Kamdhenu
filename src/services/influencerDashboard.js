@@ -36,7 +36,8 @@ export const influencerDashboardService = {
                         city,
                         state,
                         status,
-                        customer_type
+                        customer_type,
+                        mistry_name
                     )
                 `)
                 .eq('user_id', rmId);
