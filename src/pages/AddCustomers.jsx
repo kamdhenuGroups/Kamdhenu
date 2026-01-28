@@ -812,6 +812,8 @@ const AddCustomers = () => {
 
             toast.success('Customer added successfully!');
             setFormData(INITIAL_FORM_STATE);
+            setCityCounts({});
+            if (user?.user_id) fetchUserCount(user.user_id);
             if (scrollContainerRef.current) {
                 scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
             }

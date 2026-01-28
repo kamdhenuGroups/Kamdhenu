@@ -433,8 +433,8 @@ export const orderService = {
             // This is more accurate than checking 'orders' because a site can exist without an order
             let query = supabase
                 .from('sites')
-                .select('site_id, city, created_by_user_id, address_plot_house_flat_building, address_area_street_locality, address_landmark')
-                .eq('created_by_user_id', userId);
+                .select('site_id, city, rm_user_id, address_plot_house_flat_building, address_area_street_locality, address_landmark')
+                .eq('rm_user_id', userId);
 
             if (city) {
                 // We fetch all sites for this RM to correctly handle city codes
